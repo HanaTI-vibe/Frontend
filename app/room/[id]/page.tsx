@@ -980,236 +980,241 @@ export default function RoomPage() {
   if (hasJoined && !gameStarted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-        <div className="max-w-4xl mx-auto">
-          {/* 헤더 */}
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="max-w-7xl mx-auto">
+          {/* 컴팩트한 헤더 */}
+          <div className="bg-white rounded-lg shadow-md p-4 mb-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold text-gray-800">
-                퀴즈 대기실 - {room.inviteCode}
-              </h1>
               <div className="flex items-center gap-4">
-                <Badge variant="outline" className="flex items-center gap-1">
-                  <Users className="w-4 h-4" />
-                  {participants.length}명 참여
+                <h1 className="text-xl font-bold text-gray-800">
+                  퀴즈 대기실
+                </h1>
+                <Badge variant="outline" className="text-lg font-mono">
+                  {room.inviteCode}
                 </Badge>
                 {isHost && (
-                  <Badge variant="secondary">방장</Badge>
+                  <Badge variant="secondary" className="flex items-center gap-1">
+                    👑 방장
+                  </Badge>
                 )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className="flex items-center gap-1">
+                  <Users className="w-4 h-4" />
+                  {participants.length}명
+                </Badge>
+                <Button variant="outline" size="sm" onClick={copyInviteCode}>
+                  <Share2 className="w-4 h-4 mr-2" />
+                  초대코드 복사
+                </Button>
               </div>
             </div>
           </div>
 
-          <div className="grid lg:grid-cols-3 gap-6">
-            {/* 참가자 목록 */}
-            <div className="lg:col-span-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Users className="w-5 h-5" />
-                    참가자 목록
-                  </CardTitle>
-                  <CardDescription>
-                    현재 {participants.length}명이 참여 중입니다
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {participants.map((participant) => (
-                      <div
-                        key={participant.id}
-                        className={`flex items-center justify-between p-3 rounded-lg ${
-                          participant.id === currentUser
-                            ? "bg-blue-100 border border-blue-300"
-                            : "bg-gray-50"
-                        }`}
-                      >
-                        <span className="font-medium">
-                          {participant.name}
-                          {participant.id === currentUser && " (나)"}
-                          {participant.id === room.hostUserId && " 👑"}
-                        </span>
-                        <Badge variant="outline">대기 중</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* 게임 정보 및 시작 버튼 */}
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>게임 정보</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">문제 수:</span>
-                    <span className="font-medium">{room.questions.length}개</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">제한 시간:</span>
-                    <span className="font-medium">{room.timeLimit}초/문제</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">상태:</span>
-                    <Badge variant="outline">대기 중</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>초대 코드</CardTitle>
-                </CardHeader>
-                <CardContent className="text-center">
-                  <div className="bg-gray-100 rounded-lg p-4 mb-3">
-                    <div className="text-2xl font-mono font-bold text-blue-600">
-                      {room.inviteCode}
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={copyInviteCode}>
-                    <Share2 className="w-4 h-4 mr-2" />
-                    코드 복사
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {isHost && (
+          <div className="grid lg:grid-cols-4 gap-4">
+            {/* 메인 콘텐츠 영역 */}
+            <div className="lg:col-span-3 space-y-4">
+              {/* 참가자 목록과 게임 정보를 한 줄에 */}
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* 참가자 목록 */}
                 <Card>
-                  <CardHeader>
-                    <CardTitle>게임 시작</CardTitle>
-                    <CardDescription>
-                      방장만 게임을 시작할 수 있습니다
-                    </CardDescription>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Users className="w-5 h-5" />
+                      참가자 목록 ({participants.length}명)
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <Button 
-                      onClick={startGame} 
-                      className="w-full bg-green-600 hover:bg-green-700"
-                      size="lg"
-                    >
-                      게임 시작하기
-                    </Button>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {participants.map((participant) => (
+                        <div
+                          key={participant.id}
+                          className={`flex items-center justify-between p-2 rounded-lg ${
+                            participant.id === currentUser
+                              ? "bg-blue-100 border border-blue-300"
+                              : "bg-gray-50"
+                          }`}
+                        >
+                          <span className="font-medium text-sm">
+                            {participant.name}
+                            {participant.id === currentUser && " (나)"}
+                            {participant.id === room.hostUserId && " 👑"}
+                          </span>
+                          <Badge variant="outline" className="text-xs">대기 중</Badge>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
-              )}
 
-              {!isHost && (
+                {/* 게임 정보 */}
                 <Card>
-                  <CardContent className="text-center py-6">
-                    <p className="text-gray-600">
-                      방장이 게임을 시작할 때까지 기다려주세요...
-                    </p>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg">게임 정보</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-blue-50 p-3 rounded-lg text-center">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {room.questions.length}
+                        </div>
+                        <div className="text-xs text-blue-600">문제 수</div>
+                      </div>
+                      <div className="bg-green-50 p-3 rounded-lg text-center">
+                        <div className="text-2xl font-bold text-green-600">
+                          {room.timeLimit}
+                        </div>
+                        <div className="text-xs text-green-600">초/문제</div>
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <Badge variant="outline" className="text-sm">
+                        대기 중
+                      </Badge>
+                    </div>
                   </CardContent>
                 </Card>
-              )}
-            </div>
-          </div>
+              </div>
 
-          {/* 채팅 영역 */}
-          {isChatVisible && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <MessageCircle className="w-5 h-5" />
-                    실시간 채팅
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={toggleChat}
-                    className="h-6 w-6 p-0"
-                  >
-                    ×
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col p-0">
-                {/* 채팅 메시지 영역 */}
-                <ScrollArea className="flex-1 px-4 h-48">
-                  <div className="space-y-3 pb-4">
-                    {chatMessages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`${
-                          msg.type === "system" ? "text-center" : ""
-                        }`}
+              {/* 게임 시작 버튼 */}
+              <Card>
+                <CardContent className="pt-6">
+                  {isHost ? (
+                    <div className="text-center space-y-3">
+                      <p className="text-gray-600">
+                        모든 참가자가 준비되었습니다. 게임을 시작하세요!
+                      </p>
+                      <Button 
+                        onClick={startGame} 
+                        className="bg-green-600 hover:bg-green-700 text-lg px-8 py-3"
+                        size="lg"
                       >
-                        {msg.type === "system" ? (
-                          <div className="text-xs text-gray-500 bg-gray-100 rounded-full px-3 py-1 inline-block">
-                            {msg.message}
-                          </div>
-                        ) : (
-                          <div
-                            className={`${
-                              msg.userId === currentUser
-                                ? "text-right"
-                                : "text-left"
-                            }`}
-                          >
+                        🚀 게임 시작하기
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <div className="animate-pulse">
+                        <p className="text-gray-600 mb-2">
+                          방장이 게임을 시작할 때까지 기다려주세요...
+                        </p>
+                        <div className="flex justify-center">
+                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1"></div>
+                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1" style={{animationDelay: '0.1s'}}></div>
+                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1" style={{animationDelay: '0.2s'}}></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 우측 사이드바 - 채팅 */}
+            <div className="lg:col-span-1">
+              <Card className="h-[500px] flex flex-col">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-lg">
+                      <MessageCircle className="w-5 h-5" />
+                      실시간 채팅
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleChat}
+                      className="h-6 w-6 p-0"
+                    >
+                      ×
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col p-0">
+                  {/* 채팅 메시지 영역 */}
+                  <ScrollArea className="flex-1 px-4">
+                    <div className="space-y-2 pb-4">
+                      {chatMessages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`${
+                            msg.type === "system" ? "text-center" : ""
+                          }`}
+                        >
+                          {msg.type === "system" ? (
+                            <div className="text-xs text-gray-500 bg-gray-100 rounded-full px-3 py-1 inline-block">
+                              {msg.message}
+                            </div>
+                          ) : (
                             <div
-                              className={`inline-block max-w-[80%] p-2 rounded-lg ${
+                              className={`${
                                 msg.userId === currentUser
-                                  ? "bg-blue-500 text-white"
-                                  : "bg-gray-100 text-gray-900"
+                                  ? "text-right"
+                                  : "text-left"
                               }`}
                             >
-                              {msg.userId !== currentUser && (
-                                <div className="text-xs font-medium mb-1 opacity-70">
-                                  {msg.userName}
-                                </div>
-                              )}
-                              <div className="text-sm">{msg.message}</div>
-                              <div className={`text-xs mt-1 opacity-70`}>
-                                {new Date(msg.timestamp).toLocaleTimeString(
-                                  "ko-KR",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }
+                              <div
+                                className={`inline-block max-w-[85%] p-2 rounded-lg ${
+                                  msg.userId === currentUser
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-gray-100 text-gray-900"
+                                }`}
+                              >
+                                {msg.userId !== currentUser && (
+                                  <div className="text-xs font-medium mb-1 opacity-70">
+                                    {msg.userName}
+                                  </div>
                                 )}
+                                <div className="text-sm">{msg.message}</div>
+                                <div className={`text-xs mt-1 opacity-70`}>
+                                  {new Date(msg.timestamp).toLocaleTimeString(
+                                    "ko-KR",
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    }
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
 
-                {/* 채팅 입력 */}
-                <div className="p-4 border-t">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="메시지를 입력하세요..."
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          sendChatMessage();
-                        }
-                      }}
-                      className="flex-1"
-                    />
-                    <Button
-                      onClick={sendChatMessage}
-                      disabled={!chatInput.trim()}
-                      size="sm"
-                      className="px-3"
-                    >
-                      <Send className="w-4 h-4" />
-                    </Button>
+                  <Separator />
+
+                  {/* 메시지 입력 영역 */}
+                  <div className="p-3">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="메시지를 입력하세요..."
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            sendChatMessage();
+                          }
+                        }}
+                        className="flex-1 text-sm"
+                      />
+                      <Button
+                        onClick={sendChatMessage}
+                        disabled={!chatInput.trim()}
+                        size="sm"
+                        className="px-3"
+                      >
+                        <Send className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Enter로 전송
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Enter로 전송, Shift+Enter로 줄바꿈
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       </div>
     );
