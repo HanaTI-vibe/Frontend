@@ -1,6 +1,6 @@
-# Korean study helper
+# Lectrue to Quiz
 
-*Automatically synced with your [v0.dev](https://v0.dev) deployments*
+강의 PDF를 업로드 하고 문제를 풀어보세요!
 
 [![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/fewolees-projects/v0-korean-study-helper)
 [![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/w92Ja11iScZ)
