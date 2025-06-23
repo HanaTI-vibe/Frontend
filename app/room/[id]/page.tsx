@@ -76,6 +76,7 @@ export default function RoomPage() {
   const [textAnswer, setTextAnswer] = useState("");
   const [timeLeft, setTimeLeft] = useState(30);
   const [showResults, setShowResults] = useState(false);
+  const [showResultsLatch, setShowResultsLatch] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [timerRef, setTimerRef] = useState<NodeJS.Timeout | null>(null);
   const [pollIntervalRef, setPollIntervalRef] = useState<NodeJS.Timeout | null>(
@@ -133,7 +134,7 @@ export default function RoomPage() {
         : textAnswer;
 
     try {
-      await fetch(`http://localhost:8080/api/game/submit-answer`, {
+      const response = await fetch(`http://localhost:8080/api/game/submit-answer`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -147,6 +148,32 @@ export default function RoomPage() {
           isAutoSubmit: true,
         }),
       });
+
+      if (response.ok) {
+        const result = await response.json();
+
+        // 개인 답안 저장
+        const currentQuestion = room.questions[userCurrentQuestion];
+        const isCorrect =
+          currentQuestion.type === "MULTIPLE_CHOICE"
+            ? answer === currentQuestion.correctAnswer
+            : true; // 단답식은 일단 정답으로 처리
+
+        const points = isCorrect ? currentQuestion.points : 0;
+
+        setUserAnswers((prev) => ({
+          ...prev,
+          [userCurrentQuestion]: {
+            answer,
+            isCorrect,
+            points,
+          },
+        }));
+
+        setUserScore((prev) => prev + points);
+        setShowResults(true);
+        setShowResultsLatch(true);
+      }
     } catch (error) {
       console.error("Failed to auto submit answer:", error);
     }
@@ -170,10 +197,59 @@ export default function RoomPage() {
           console.log("첫 번째 문제:", roomData.questions[0]);
         }
         console.log(roomData);
+        
+        // 현재 문제가 변경되었을 때 (방장이 다음 문제로 넘어갔을 때)
+        if (room && roomData.currentQuestion !== room.currentQuestion && gameStarted && hasJoined) {
+          console.log(`문제 변경 감지: ${room.currentQuestion} -> ${roomData.currentQuestion}`);
+          setUserCurrentQuestion(roomData.currentQuestion);
+          setIsLastQuestion(roomData.currentQuestion >= roomData.questions.length - 1);
+          setShowResults(false);
+          setShowResultsLatch(false);
+          setHasSubmitted(false);
+          setSelectedAnswer("");
+          setTextAnswer("");
+          
+          // 타이머 재시작
+          if (timerRef) {
+            clearInterval(timerRef);
+          }
+          startTimer(roomData.timeLimit || 30);
+          
+          // 시스템 메시지 추가
+          const systemMessage: ChatMessage = {
+            id: `system_${Date.now()}`,
+            userId: "system",
+            userName: "시스템",
+            message: `문제 ${roomData.currentQuestion + 1}번이 시작되었습니다.`,
+            timestamp: Date.now(),
+            type: "system",
+          };
+          setChatMessages((prev) => [...prev, systemMessage]);
+        }
+        
+        // 퀴즈가 종료된 경우
+        if (room && roomData.status === "finished" && room.status !== "finished" && hasJoined) {
+          setQuizFinished(true);
+          if (timerRef) {
+            clearInterval(timerRef);
+          }
+          
+          // 시스템 메시지 추가
+          const systemMessage: ChatMessage = {
+            id: `system_${Date.now()}`,
+            userId: "system",
+            userName: "시스템",
+            message: "퀴즈가 종료되었습니다!",
+            timestamp: Date.now(),
+            type: "system",
+          };
+          setChatMessages((prev) => [...prev, systemMessage]);
+        }
+        
         setRoom(roomData);
         setParticipants(roomData.participants || []);
 
-        // 방에 입장하지 않은 상태에서는 문제를 숨김
+        // 방에 입장하지 않은 상태에서만 문제를 숨김
         if (!hasJoined) {
           setShowResults(false);
         }
@@ -194,8 +270,8 @@ export default function RoomPage() {
     // 초기 방 정보 로드
     pollRoomInfo();
 
-    // 주기적으로 방 정보 업데이트 (5초마다)
-    const newPollInterval = setInterval(pollRoomInfo, 5000);
+    // 주기적으로 방 정보 업데이트 (1초마다로 변경)
+    const newPollInterval = setInterval(pollRoomInfo, 1000);
     setPollIntervalRef(newPollInterval);
 
     return () => {
@@ -277,7 +353,12 @@ export default function RoomPage() {
         setHasJoinedWebSocket(false);
         setIsHost(joinData.isHost || false);
         setGameStarted(joinData.roomStatus === "ACTIVE");
-        setShowResults(false);
+        
+        // 게임이 시작되지 않은 경우에만 결과창 초기화
+        if (joinData.roomStatus !== "ACTIVE") {
+          setShowResults(false);
+        }
+        
         setHasSubmitted(false);
         setSelectedAnswer("");
         setTextAnswer("");
@@ -356,6 +437,7 @@ export default function RoomPage() {
 
         setUserScore((prev) => prev + points);
         setShowResults(true);
+        setShowResultsLatch(true);
 
         // 타이머 정지
         if (timerRef) {
@@ -457,8 +539,9 @@ export default function RoomPage() {
     }
   };
 
-  const nextQuestion = async () => {
-    if (!room) return;
+  // 방장이 다음 문제로 넘어가기 (모든 참가자에게 적용)
+  const moveToNextQuestion = async () => {
+    if (!room || !isHost) return;
 
     try {
       const response = await fetch(
@@ -480,6 +563,10 @@ export default function RoomPage() {
         if (data.status === "finished") {
           setQuizFinished(true);
           setShowResults(false);
+          setShowResultsLatch(false);
+          if (timerRef) {
+            clearInterval(timerRef);
+          }
         } else {
           // 다음 문제 정보로 업데이트
           setRoom((prev) =>
@@ -491,8 +578,11 @@ export default function RoomPage() {
               : null
           );
 
+          // 모든 사용자의 상태 초기화
+          setUserCurrentQuestion(data.currentQuestion);
           setIsLastQuestion(data.isLastQuestion);
           setShowResults(false);
+          setShowResultsLatch(false);
           setHasSubmitted(false);
           setSelectedAnswer("");
           setTextAnswer("");
@@ -518,30 +608,6 @@ export default function RoomPage() {
     } catch (error) {
       console.error("Failed to move to next question:", error);
     }
-  };
-
-  // 개인별 다음 문제로 넘어가기
-  const nextUserQuestion = () => {
-    if (!room || userCurrentQuestion >= room.questions.length - 1) {
-      setQuizFinished(true);
-      setShowResults(false);
-      return;
-    }
-
-    setUserCurrentQuestion((prev) => prev + 1);
-    setShowResults(false);
-    setHasSubmitted(false);
-    setSelectedAnswer("");
-    setTextAnswer("");
-
-    // 타이머 재시작
-    if (timerRef) {
-      clearInterval(timerRef);
-    }
-    startTimer(room.timeLimit || 30);
-
-    // 마지막 문제인지 확인
-    setIsLastQuestion(userCurrentQuestion + 1 >= room.questions.length - 1);
   };
 
   // WebSocket 연결
@@ -603,6 +669,54 @@ export default function RoomPage() {
             setChatMessages((prev) => [...prev, systemMessage]);
           } else if (data.type === "participants-update") {
             setParticipants(data.participants || []);
+          } else if (data.type === "question-change") {
+            // 방장이 다음 문제로 넘어갔을 때 즉시 처리
+            console.log("WebSocket을 통한 문제 변경 알림 수신:", data);
+            setUserCurrentQuestion(data.currentQuestion);
+            setIsLastQuestion(data.isLastQuestion);
+            setShowResults(false);
+            setShowResultsLatch(false);
+            setHasSubmitted(false);
+            setSelectedAnswer("");
+            setTextAnswer("");
+            
+            // 타이머 재시작
+            if (timerRef) {
+              clearInterval(timerRef);
+            }
+            startTimer(data.timeLimit || 30);
+            
+            // 즉시 방 정보 폴링으로 최신 정보 가져오기
+            pollRoomInfo();
+            
+            // 시스템 메시지 추가
+            const systemMessage: ChatMessage = {
+              id: `system_${Date.now()}`,
+              userId: "system",
+              userName: "시스템",
+              message: `문제 ${data.currentQuestion + 1}번이 시작되었습니다.`,
+              timestamp: Date.now(),
+              type: "system",
+            };
+            setChatMessages((prev) => [...prev, systemMessage]);
+          } else if (data.type === "quiz-finished") {
+            // 퀴즈 종료 알림
+            console.log("WebSocket을 통한 퀴즈 종료 알림 수신");
+            setQuizFinished(true);
+            if (timerRef) {
+              clearInterval(timerRef);
+            }
+            
+            // 시스템 메시지 추가
+            const systemMessage: ChatMessage = {
+              id: `system_${Date.now()}`,
+              userId: "system",
+              userName: "시스템",
+              message: "퀴즈가 종료되었습니다!",
+              timestamp: Date.now(),
+              type: "system",
+            };
+            setChatMessages((prev) => [...prev, systemMessage]);
           }
         } catch (error) {
           console.error("메시지 파싱 오류:", error);
@@ -1126,24 +1240,60 @@ export default function RoomPage() {
               </CardContent>
             </Card>
 
-            {showResults && currentQuestion.explanation && (
+            {showResultsLatch && (
               <Card className="mt-4">
                 <CardHeader>
-                  <CardTitle>해설</CardTitle>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>답안 결과</span>
+                    <Badge variant={userAnswers[userCurrentQuestion]?.isCorrect ? "default" : "destructive"}>
+                      {userAnswers[userCurrentQuestion]?.isCorrect ? "정답" : "오답"}
+                    </Badge>
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p>{currentQuestion.explanation}</p>
+                <CardContent className="space-y-4">
+                  {/* 내 답안 */}
+                  <div>
+                    <h4 className="font-medium text-gray-700 mb-2">내 답안:</h4>
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      {userAnswers[userCurrentQuestion]?.answer || "답안 없음"}
+                    </div>
+                  </div>
+
+                  {/* 정답 */}
                   {currentQuestion.correctAnswer && (
-                    <p className="mt-2 font-medium text-green-600">
-                      정답: {currentQuestion.correctAnswer}
-                    </p>
+                    <div>
+                      <h4 className="font-medium text-green-600 mb-2">정답:</h4>
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                        {currentQuestion.correctAnswer}
+                      </div>
+                    </div>
                   )}
+
+                  {/* 해설 */}
+                  {currentQuestion.explanation && (
+                    <div>
+                      <h4 className="font-medium text-gray-700 mb-2">해설:</h4>
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        {currentQuestion.explanation}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 점수 */}
+                  <div className="text-center">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-100 border border-yellow-300 rounded-lg">
+                      <span className="font-medium">획득 점수:</span>
+                      <span className="font-bold text-yellow-700">
+                        {userAnswers[userCurrentQuestion]?.points || 0}점
+                      </span>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}
 
             {/* 다음 문제 버튼 */}
-            {showResults && (
+            {showResultsLatch && (
               <Card className="mt-4">
                 <CardContent className="pt-6">
                   {quizFinished ? (
@@ -1163,13 +1313,19 @@ export default function RoomPage() {
                     </div>
                   ) : (
                     <div className="text-center">
-                      <Button
-                        onClick={nextUserQuestion}
-                        className="w-full bg-green-600 hover:bg-green-700"
-                        size="lg"
-                      >
-                        {isLastQuestion ? "퀴즈 완료하기" : "다음 문제로"}
-                      </Button>
+                      {isHost ? (
+                        <Button
+                          onClick={moveToNextQuestion}
+                          className="w-full bg-green-600 hover:bg-green-700"
+                          size="lg"
+                        >
+                          {isLastQuestion ? "퀴즈 완료하기" : "다음 문제로"}
+                        </Button>
+                      ) : (
+                        <div className="w-full p-4 text-center text-gray-500 bg-gray-50 rounded-lg">
+                          방장이 다음 문제로 넘어가기를 기다리는 중...
+                        </div>
+                      )}
                       {isLastQuestion && (
                         <p className="text-sm text-gray-500 mt-2">
                           마지막 문제입니다
