@@ -30,8 +30,8 @@ export default function JoinRoomPage() {
     setError("")
 
     try {
-      // 초대코드로 roomId 조회
-      const response = await fetch(`/api/rooms/by-code?code=${inviteCode.trim()}`)
+      // Spring Boot 백엔드 API 호출
+      const response = await fetch(`http://localhost:8080/api/rooms/by-code?code=${inviteCode.trim()}`)
 
       if (response.ok) {
         const { roomId } = await response.json()

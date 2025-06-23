@@ -47,17 +47,24 @@ export default function CreateRoomPage() {
     formData.append("timeLimit", timeLimit)
 
     try {
-      const response = await fetch("/api/generate-questions", {
+      // Spring Boot 백엔드 서버로 요청
+      const response = await fetch("http://localhost:8080/api/generate-questions", {
         method: "POST",
         body: formData,
       })
 
       if (response.ok) {
-        const { roomId } = await response.json()
-        router.push(`/room/${roomId}`)
+        const data = await response.json()
+        console.log("방 생성 성공:", data)
+        router.push(`/room/${data.roomId}`)
+      } else {
+        const errorText = await response.text()
+        console.error("방 생성 실패:", response.status, errorText)
+        alert("방 생성에 실패했습니다. 다시 시도해주세요.")
       }
     } catch (error) {
       console.error("Failed to generate questions:", error)
+      alert("서버 연결에 실패했습니다. 백엔드 서버가 실행 중인지 확인해주세요.")
     } finally {
       setIsGenerating(false)
     }

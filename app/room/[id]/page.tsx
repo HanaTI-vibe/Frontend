@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Users, Trophy, Clock, Share2, Send, MessageCircle, Timer } from "lucide-react"
-import { io, type Socket } from "socket.io-client"
+import { io, Socket } from "socket.io-client"
 
 interface Question {
   id: string
@@ -59,28 +59,32 @@ export default function RoomPage() {
   const [hasJoined, setHasJoined] = useState(false)
   const [selectedAnswer, setSelectedAnswer] = useState("")
   const [textAnswer, setTextAnswer] = useState("")
-  const [socket, setSocket] = useState<Socket | null>(null)
   const [timeLeft, setTimeLeft] = useState(30)
   const [showResults, setShowResults] = useState(false)
   const [hasSubmitted, setHasSubmitted] = useState(false)
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const [timerRef, setTimerRef] = useState<NodeJS.Timeout | null>(null)
+  const [pollIntervalRef, setPollIntervalRef] = useState<NodeJS.Timeout | null>(null)
+  const [isLastQuestion, setIsLastQuestion] = useState(false)
+  const [quizFinished, setQuizFinished] = useState(false)
 
-  // 채팅 관련 상태
+  // WebSocket 관련 상태
+  const [socket, setSocket] = useState<Socket | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [unreadCount, setUnreadCount] = useState(0)
   const [isChatVisible, setIsChatVisible] = useState(true)
+  const [isConnected, setIsConnected] = useState(false)
 
   // 타이머 시작 함수
   const startTimer = (duration: number) => {
     setTimeLeft(duration)
     setHasSubmitted(false)
 
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
+    if (timerRef) {
+      clearInterval(timerRef)
     }
 
-    timerRef.current = setInterval(() => {
+    const newTimer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           // 시간 종료 시 자동 제출
@@ -92,26 +96,62 @@ export default function RoomPage() {
         return prev - 1
       })
     }, 1000)
+    
+    setTimerRef(newTimer)
   }
 
   // 자동 제출 함수
-  const autoSubmitAnswer = () => {
-    if (!socket || !currentUser || !room || hasSubmitted) return
+  const autoSubmitAnswer = async () => {
+    if (!currentUser || !room || hasSubmitted) return
 
     const answer = room.questions[room.currentQuestion].type === "multiple-choice" ? selectedAnswer : textAnswer
 
-    socket.emit("submit-answer", {
-      roomId,
-      userId: currentUser,
-      questionId: room.questions[room.currentQuestion].id,
-      answer: answer || "", // 빈 답안이라도 제출
-      timestamp: Date.now(),
-      isAutoSubmit: true,
-    })
+    try {
+      await fetch(`http://localhost:8080/api/game/submit-answer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId,
+          userId: currentUser,
+          questionId: room.questions[room.currentQuestion].id,
+          answer: answer || "",
+          timestamp: Date.now(),
+          isAutoSubmit: true,
+        }),
+      })
+    } catch (error) {
+      console.error("Failed to auto submit answer:", error)
+    }
 
     setHasSubmitted(true)
     setSelectedAnswer("")
     setTextAnswer("")
+  }
+
+  // 방 정보 폴링
+  const pollRoomInfo = async () => {
+    try {
+      const response = await fetch(`http://localhost:8080/api/game/room/${roomId}`)
+      if (response.ok) {
+        const roomData = await response.json()
+        console.log("방 정보 수신:", roomData)
+        console.log("문제 개수:", roomData.questions?.length || 0)
+        if (roomData.questions && roomData.questions.length > 0) {
+          console.log("첫 번째 문제:", roomData.questions[0])
+        }
+        
+        setRoom(roomData)
+        setParticipants(roomData.participants || [])
+        
+        if (roomData.timeLimit && !timerRef) {
+          setTimeLeft(roomData.timeLimit)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to poll room info:", error)
+    }
   }
 
   useEffect(() => {
@@ -121,127 +161,108 @@ export default function RoomPage() {
       setUserName(nameFromUrl)
     }
 
-    // 룸 정보 가져오기
-    fetch(`/api/generate-questions?roomId=${roomId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setRoom(data)
-        if (data.timeLimit) {
-          setTimeLeft(data.timeLimit)
-        }
-      })
-      .catch((err) => console.error("Failed to load room:", err))
+    // 초기 방 정보 로드
+    pollRoomInfo()
 
-    // 소켓 연결
-    const newSocket = io()
-    setSocket(newSocket)
-
-    // 참가자 업데이트 수신
-    newSocket.on("participants-updated", (updatedParticipants: Participant[]) => {
-      setParticipants(updatedParticipants)
-    })
-
-    // 문제 변경 수신
-    newSocket.on("question-changed", ({ currentQuestion, question, timeLimit }) => {
-      setRoom((prev) => (prev ? { ...prev, currentQuestion } : null))
-      setShowResults(false)
-      setSelectedAnswer("")
-      setTextAnswer("")
-      startTimer(timeLimit || 30)
-    })
-
-    // 타이머 동기화 수신
-    newSocket.on("timer-sync", ({ timeLeft: syncTimeLeft }) => {
-      setTimeLeft(syncTimeLeft)
-    })
-
-    // 답안 결과 수신
-    newSocket.on("answer-result", ({ isCorrect, points, explanation }) => {
-      setShowResults(true)
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
-    })
-
-    // 채팅 메시지 수신
-    newSocket.on("chat-message", (message: ChatMessage) => {
-      setChatMessages((prev) => [...prev, message])
-      if (!isChatVisible) {
-        setUnreadCount((prev) => prev + 1)
-      }
-    })
-
-    // 시스템 메시지 수신
-    newSocket.on("system-message", (message: string) => {
-      const systemMessage: ChatMessage = {
-        id: `system_${Date.now()}`,
-        userId: "system",
-        userName: "시스템",
-        message,
-        timestamp: Date.now(),
-        type: "system",
-      }
-      setChatMessages((prev) => [...prev, systemMessage])
-    })
+    // 주기적으로 방 정보 업데이트 (5초마다)
+    const newPollInterval = setInterval(pollRoomInfo, 5000)
+    setPollIntervalRef(newPollInterval)
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
+      if (timerRef) {
+        clearInterval(timerRef)
       }
-      newSocket.close()
+      if (pollIntervalRef) {
+        clearInterval(pollIntervalRef)
+      }
+      // WebSocket 연결 해제
+      disconnectWebSocket()
     }
-  }, [roomId, isChatVisible, hasSubmitted])
+  }, [roomId])
 
-  const joinRoom = () => {
-    if (!userName.trim() || !socket || !room) return
+  const joinRoom = async () => {
+    if (!userName.trim() || !room) return
 
     const userId = `user_${Date.now()}`
-    setCurrentUser(userId)
-    setHasJoined(true)
+    
+    try {
+      const response = await fetch(`http://localhost:8080/api/game/join-room`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId,
+          userId,
+          userName: userName.trim(),
+        }),
+      })
 
-    socket.emit("join-room", { roomId, userId, userName })
-
-    // 방 입장 시 타이머 시작
-    startTimer(room.timeLimit || 30)
+      if (response.ok) {
+        setCurrentUser(userId)
+        setHasJoined(true)
+        
+        // WebSocket 연결
+        connectWebSocket()
+        
+        // 방 입장 시 타이머 시작
+        startTimer(room.timeLimit || 30)
+      }
+    } catch (error) {
+      console.error("Failed to join room:", error)
+    }
   }
 
-  const submitAnswer = () => {
-    if (!socket || !currentUser || !room || hasSubmitted) return
+  const submitAnswer = async () => {
+    if (!currentUser || !room || hasSubmitted) return
 
     const answer = room.questions[room.currentQuestion].type === "multiple-choice" ? selectedAnswer : textAnswer
 
-    socket.emit("submit-answer", {
-      roomId,
-      userId: currentUser,
-      questionId: room.questions[room.currentQuestion].id,
-      answer,
-      timestamp: Date.now(),
-      isAutoSubmit: false,
-    })
+    try {
+      const response = await fetch(`http://localhost:8080/api/game/submit-answer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId,
+          userId: currentUser,
+          questionId: room.questions[room.currentQuestion].id,
+          answer,
+          timestamp: Date.now(),
+          isAutoSubmit: false,
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        setShowResults(true)
+        
+        // 타이머 정지
+        if (timerRef) {
+          clearInterval(timerRef)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to submit answer:", error)
+    }
 
     setHasSubmitted(true)
     setSelectedAnswer("")
     setTextAnswer("")
-
-    // 타이머 정지
-    if (timerRef.current) {
-      clearInterval(timerRef.current)
-    }
   }
 
   const sendChatMessage = () => {
-    if (!newMessage.trim() || !socket || !currentUser) return
+    if (!newMessage.trim() || !socket || !currentUser || !room) return
 
-    const message: ChatMessage = {
-      id: `msg_${Date.now()}`,
+    socket.emit('chat', {
+      roomId: room.id,
       userId: currentUser,
-      userName,
-      message: newMessage,
-      timestamp: Date.now(),
-      type: "message",
-    }
+      userName: userName,
+      message: newMessage.trim(),
+      timestamp: Date.now()
+    })
 
-    socket.emit("chat-message", { roomId, message })
     setNewMessage("")
   }
 
@@ -260,6 +281,133 @@ export default function RoomPage() {
     if (room?.inviteCode) {
       navigator.clipboard.writeText(room.inviteCode)
     }
+  }
+
+  const nextQuestion = async () => {
+    if (!room) return
+
+    try {
+      const response = await fetch(`http://localhost:8080/api/game/next-question`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId: room.id,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        if (data.status === "finished") {
+          setQuizFinished(true)
+          setShowResults(false)
+        } else {
+          // 다음 문제 정보로 업데이트
+          setRoom(prev => prev ? {
+            ...prev,
+            currentQuestion: data.currentQuestion
+          } : null)
+          
+          setIsLastQuestion(data.isLastQuestion)
+          setShowResults(false)
+          setHasSubmitted(false)
+          setSelectedAnswer("")
+          setTextAnswer("")
+          
+          // 타이머 재시작
+          startTimer(room.timeLimit || 30)
+          
+          // 시스템 메시지 추가
+          const systemMessage: ChatMessage = {
+            id: `system_${Date.now()}`,
+            userId: "system",
+            userName: "시스템",
+            message: `문제 ${data.currentQuestion + 1}번이 시작되었습니다.`,
+            timestamp: Date.now(),
+            type: "system",
+          }
+          setChatMessages(prev => [...prev, systemMessage])
+        }
+      }
+    } catch (error) {
+      console.error("Failed to move to next question:", error)
+    }
+  }
+
+  // WebSocket 연결
+  const connectWebSocket = () => {
+    const socketInstance = io('http://localhost:8080')
+    
+    socketInstance.on('connect', () => {
+      console.log('WebSocket 연결됨')
+      setIsConnected(true)
+      
+      // 방 입장 메시지 전송
+      if (currentUser && userName && room) {
+        socketInstance.emit('join', {
+          roomId: room.id,
+          userId: currentUser,
+          userName: userName
+        })
+      }
+    })
+    
+    socketInstance.on('disconnect', () => {
+      console.log('WebSocket 연결 해제됨')
+      setIsConnected(false)
+    })
+    
+    // 채팅 메시지 수신
+    socketInstance.on('chat', (data) => {
+      console.log('WebSocket 메시지 수신:', data)
+      
+      if (data.type === 'chat') {
+        const chatMessage: ChatMessage = {
+          id: `msg_${Date.now()}`,
+          userId: data.userId,
+          userName: data.userName,
+          message: data.message,
+          timestamp: data.timestamp,
+          type: 'message'
+        }
+        setChatMessages(prev => [...prev, chatMessage])
+        if (!isChatVisible) {
+          setUnreadCount(prev => prev + 1)
+        }
+      } else if (data.type === 'system') {
+        const systemMessage: ChatMessage = {
+          id: `system_${Date.now()}`,
+          userId: 'system',
+          userName: '시스템',
+          message: data.message,
+          timestamp: data.timestamp,
+          type: 'system'
+        }
+        setChatMessages(prev => [...prev, systemMessage])
+      } else if (data.type === 'participants-update') {
+        setParticipants(data.participants || [])
+      }
+    })
+    
+    setSocket(socketInstance)
+  }
+
+  // WebSocket 연결 해제
+  const disconnectWebSocket = () => {
+    if (socket) {
+      // 퇴장 메시지 전송
+      if (currentUser && userName && room) {
+        socket.emit('leave', {
+          roomId: room.id,
+          userId: currentUser,
+          userName: userName
+        })
+      }
+      socket.disconnect()
+    }
+    setIsConnected(false)
   }
 
   if (!room) {
@@ -428,6 +576,36 @@ export default function RoomPage() {
                   <p>{currentQuestion.explanation}</p>
                   {currentQuestion.correctAnswer && (
                     <p className="mt-2 font-medium text-green-600">정답: {currentQuestion.correctAnswer}</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 다음 문제 버튼 */}
+            {showResults && (
+              <Card className="mt-4">
+                <CardContent className="pt-6">
+                  {quizFinished ? (
+                    <div className="text-center">
+                      <h3 className="text-xl font-bold text-green-600 mb-4">🎉 퀴즈 완료!</h3>
+                      <p className="text-gray-600 mb-4">모든 문제를 풀었습니다.</p>
+                      <Button onClick={() => window.location.href = "/"} variant="outline">
+                        메인으로 돌아가기
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <Button 
+                        onClick={nextQuestion} 
+                        className="w-full bg-green-600 hover:bg-green-700"
+                        size="lg"
+                      >
+                        {isLastQuestion ? "퀴즈 완료하기" : "다음 문제로"}
+                      </Button>
+                      {isLastQuestion && (
+                        <p className="text-sm text-gray-500 mt-2">마지막 문제입니다</p>
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>
