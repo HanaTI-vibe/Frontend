@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,12 +9,11 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { Users, Trophy, Clock, Share2, Send, MessageCircle, Timer } from "lucide-react"
-import { io, Socket } from "socket.io-client"
+import { MessageCircle, Send, Users, Trophy, Share2 } from "lucide-react"
 
 interface Question {
   id: string
-  type: "multiple-choice" | "short-answer"
+  type: "MULTIPLE_CHOICE" | "SHORT_ANSWER"
   question: string
   options?: string[]
   correctAnswer?: string
@@ -68,7 +67,6 @@ export default function RoomPage() {
   const [quizFinished, setQuizFinished] = useState(false)
 
   // WebSocket 관련 상태
-  const [socket, setSocket] = useState<Socket | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [unreadCount, setUnreadCount] = useState(0)
@@ -104,7 +102,7 @@ export default function RoomPage() {
   const autoSubmitAnswer = async () => {
     if (!currentUser || !room || hasSubmitted) return
 
-    const answer = room.questions[room.currentQuestion].type === "multiple-choice" ? selectedAnswer : textAnswer
+    const answer = room.questions[room.currentQuestion].type === "MULTIPLE_CHOICE" ? selectedAnswer : textAnswer
 
     try {
       await fetch(`http://localhost:8080/api/game/submit-answer`, {
@@ -154,6 +152,22 @@ export default function RoomPage() {
     }
   }
 
+  // 채팅 메시지 폴링 (간단한 구현)
+  const pollChatMessages = async () => {
+    if (!room || !currentUser) return
+    
+    try {
+      const response = await fetch(`http://localhost:8080/api/socket/messages/${room.id}`)
+      if (response.ok) {
+        const messages = await response.json()
+        // 실제로는 새 메시지만 추가하는 로직이 필요
+        console.log("채팅 메시지 수신:", messages)
+      }
+    } catch (error) {
+      console.error("채팅 메시지 폴링 실패:", error)
+    }
+  }
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const nameFromUrl = urlParams.get("name")
@@ -168,6 +182,9 @@ export default function RoomPage() {
     const newPollInterval = setInterval(pollRoomInfo, 5000)
     setPollIntervalRef(newPollInterval)
 
+    // 채팅 메시지 폴링 (2초마다)
+    const chatPollInterval = setInterval(pollChatMessages, 2000)
+
     return () => {
       if (timerRef) {
         clearInterval(timerRef)
@@ -175,10 +192,22 @@ export default function RoomPage() {
       if (pollIntervalRef) {
         clearInterval(pollIntervalRef)
       }
+      clearInterval(chatPollInterval)
       // WebSocket 연결 해제
       disconnectWebSocket()
     }
   }, [roomId])
+
+  // 현재 문제 디버깅용 useEffect
+  useEffect(() => {
+    if (room && room.questions && room.questions.length > 0) {
+      const currentQuestion = room.questions[room.currentQuestion]
+      console.log("현재 문제:", currentQuestion)
+      console.log("문제 타입:", currentQuestion.type)
+      console.log("선택지:", currentQuestion.options)
+      console.log("선택지 개수:", currentQuestion.options?.length || 0)
+    }
+  }, [room, room?.currentQuestion])
 
   const joinRoom = async () => {
     if (!userName.trim() || !room) return
@@ -216,7 +245,7 @@ export default function RoomPage() {
   const submitAnswer = async () => {
     if (!currentUser || !room || hasSubmitted) return
 
-    const answer = room.questions[room.currentQuestion].type === "multiple-choice" ? selectedAnswer : textAnswer
+    const answer = room.questions[room.currentQuestion].type === "MULTIPLE_CHOICE" ? selectedAnswer : textAnswer
 
     try {
       const response = await fetch(`http://localhost:8080/api/game/submit-answer`, {
@@ -253,14 +282,34 @@ export default function RoomPage() {
   }
 
   const sendChatMessage = () => {
-    if (!newMessage.trim() || !socket || !currentUser || !room) return
+    if (!newMessage.trim() || !currentUser || !room) return
 
-    socket.emit('chat', {
-      roomId: room.id,
+    // 로컬에 메시지 추가 (즉시 표시)
+    const localMessage: ChatMessage = {
+      id: `local_${Date.now()}`,
       userId: currentUser,
       userName: userName,
       message: newMessage.trim(),
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      type: 'message'
+    }
+    setChatMessages(prev => [...prev, localMessage])
+
+    // HTTP 요청으로 채팅 메시지 전송
+    fetch('http://localhost:8080/api/socket/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        roomId: room.id,
+        userId: currentUser,
+        userName: userName,
+        message: newMessage.trim(),
+        timestamp: Date.now()
+      }),
+    }).catch(error => {
+      console.error('채팅 메시지 전송 실패:', error)
     })
 
     setNewMessage("")
@@ -338,74 +387,43 @@ export default function RoomPage() {
 
   // WebSocket 연결
   const connectWebSocket = () => {
-    const socketInstance = io('http://localhost:8080')
-    
-    socketInstance.on('connect', () => {
-      console.log('WebSocket 연결됨')
-      setIsConnected(true)
-      
-      // 방 입장 메시지 전송
-      if (currentUser && userName && room) {
-        socketInstance.emit('join', {
+    // HTTP 요청으로 방 입장
+    if (currentUser && userName && room) {
+      fetch('http://localhost:8080/api/socket/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           roomId: room.id,
           userId: currentUser,
           userName: userName
-        })
-      }
-    })
+        }),
+      }).catch(error => {
+        console.error('방 입장 실패:', error)
+      })
+    }
     
-    socketInstance.on('disconnect', () => {
-      console.log('WebSocket 연결 해제됨')
-      setIsConnected(false)
-    })
-    
-    // 채팅 메시지 수신
-    socketInstance.on('chat', (data) => {
-      console.log('WebSocket 메시지 수신:', data)
-      
-      if (data.type === 'chat') {
-        const chatMessage: ChatMessage = {
-          id: `msg_${Date.now()}`,
-          userId: data.userId,
-          userName: data.userName,
-          message: data.message,
-          timestamp: data.timestamp,
-          type: 'message'
-        }
-        setChatMessages(prev => [...prev, chatMessage])
-        if (!isChatVisible) {
-          setUnreadCount(prev => prev + 1)
-        }
-      } else if (data.type === 'system') {
-        const systemMessage: ChatMessage = {
-          id: `system_${Date.now()}`,
-          userId: 'system',
-          userName: '시스템',
-          message: data.message,
-          timestamp: data.timestamp,
-          type: 'system'
-        }
-        setChatMessages(prev => [...prev, systemMessage])
-      } else if (data.type === 'participants-update') {
-        setParticipants(data.participants || [])
-      }
-    })
-    
-    setSocket(socketInstance)
+    setIsConnected(true)
   }
 
   // WebSocket 연결 해제
   const disconnectWebSocket = () => {
-    if (socket) {
-      // 퇴장 메시지 전송
-      if (currentUser && userName && room) {
-        socket.emit('leave', {
+    // HTTP 요청으로 방 퇴장
+    if (currentUser && userName && room) {
+      fetch('http://localhost:8080/api/socket/leave', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           roomId: room.id,
           userId: currentUser,
           userName: userName
-        })
-      }
-      socket.disconnect()
+        }),
+      }).catch(error => {
+        console.error('방 퇴장 실패:', error)
+      })
     }
     setIsConnected(false)
   }
@@ -472,8 +490,8 @@ export default function RoomPage() {
                 variant={timeLeft <= 10 ? "destructive" : "outline"}
                 className={`flex items-center gap-1 ${timeLeft <= 10 ? "animate-pulse" : ""}`}
               >
-                <Timer className="w-4 h-4" />
-                {timeLeft}초
+                <Badge>{currentQuestion.points}점</Badge>
+                <Badge variant={timeLeft <= 10 ? "destructive" : "secondary"}>{timeLeft}초 남음</Badge>
               </Badge>
               <Button variant="outline" size="sm" onClick={toggleChat} className="relative">
                 <MessageCircle className="w-4 h-4 mr-2" />
@@ -484,14 +502,23 @@ export default function RoomPage() {
               </Button>
             </div>
           </div>
-          <Progress value={progress} className="h-2" />
+          <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
           <div className="flex justify-between items-center mt-2">
             <p className="text-sm text-gray-600">
               문제 {room.currentQuestion + 1} / {room.questions.length}
             </p>
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-gray-500" />
-              <span className="text-sm text-gray-600">문제당 {room.timeLimit}초</span>
+              <div className="text-sm text-gray-500">
+                {new Date().toLocaleTimeString("ko-KR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -509,42 +536,61 @@ export default function RoomPage() {
                   </div>
                 </CardTitle>
                 <CardDescription>
-                  유형: {currentQuestion.type === "multiple-choice" ? "객관식" : "단답식"}
+                  유형: {currentQuestion.type === "MULTIPLE_CHOICE" ? "객관식" : "단답식"}
                   {hasSubmitted && <span className="ml-2 text-green-600">✓ 제출완료</span>}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="text-lg font-medium">{currentQuestion.question}</div>
 
-                {currentQuestion.type === "multiple-choice" && currentQuestion.options && (
+                {/* 객관식 문제일 때만 선택지 표시 */}
+                {currentQuestion.type === "MULTIPLE_CHOICE" && (
                   <div className="space-y-2">
-                    {currentQuestion.options.map((option, index) => (
-                      <div
-                        key={index}
-                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                          selectedAnswer === option
-                            ? "bg-blue-100 border-blue-500"
-                            : hasSubmitted
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:bg-gray-50"
-                        }`}
-                        onClick={() => !hasSubmitted && setSelectedAnswer(option)}
-                      >
-                        <span className="font-medium mr-2">{String.fromCharCode(65 + index)}.</span>
-                        {option}
+                    <div className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">객관식</span>
+                      다음 중 정답을 선택하세요:
+                    </div>
+                    {currentQuestion.options && currentQuestion.options.length > 0 ? (
+                      currentQuestion.options.map((option, index) => (
+                        <div
+                          key={index}
+                          className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                            selectedAnswer === option
+                              ? "bg-blue-100 border-blue-500"
+                              : hasSubmitted
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:bg-gray-50"
+                          }`}
+                          onClick={() => !hasSubmitted && setSelectedAnswer(option)}
+                        >
+                          <span className="font-medium mr-2">{String.fromCharCode(65 + index)}.</span>
+                          {option}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-4 text-center text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+                        선택지가 로드되지 않았습니다.
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
 
-                {currentQuestion.type === "short-answer" && (
-                  <Input
-                    placeholder="답을 입력하세요"
-                    value={textAnswer}
-                    onChange={(e) => setTextAnswer(e.target.value)}
-                    disabled={hasSubmitted}
-                    onKeyPress={(e) => e.key === "Enter" && !hasSubmitted && submitAnswer()}
-                  />
+                {/* 단답식 문제일 때만 텍스트 입력 필드 표시 */}
+                {currentQuestion.type === "SHORT_ANSWER" && (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">단답식</span>
+                      답을 입력하세요:
+                    </div>
+                    <Input
+                      placeholder="답을 입력하세요"
+                      value={textAnswer}
+                      onChange={(e) => setTextAnswer(e.target.value)}
+                      disabled={hasSubmitted}
+                      onKeyPress={(e) => e.key === "Enter" && !hasSubmitted && submitAnswer()}
+                      className="text-lg"
+                    />
+                  </div>
                 )}
 
                 <Button
@@ -552,8 +598,8 @@ export default function RoomPage() {
                   className="w-full"
                   disabled={
                     hasSubmitted ||
-                    (currentQuestion.type === "multiple-choice" && !selectedAnswer) ||
-                    (currentQuestion.type === "short-answer" && !textAnswer.trim())
+                    (currentQuestion.type === "MULTIPLE_CHOICE" && !selectedAnswer) ||
+                    (currentQuestion.type === "SHORT_ANSWER" && !textAnswer.trim())
                   }
                 >
                   {hasSubmitted ? "제출완료" : "답안 제출"}
