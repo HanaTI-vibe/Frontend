@@ -202,7 +202,6 @@ export default function RoomPage() {
       if (pollIntervalRef) {
         clearInterval(pollIntervalRef);
       }
-      clearInterval(chatPollIntervalRef);
       // WebSocket 연결 해제
       disconnectWebSocket();
     };
