@@ -1,110 +1,133 @@
-"use client"
+"use client";
 
-import { useEffect, useState, useRef } from "react"
-import { useParams } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
-import { Users, Trophy, Clock, Share2, Send, MessageCircle, Timer } from "lucide-react"
-import { io, Socket } from "socket.io-client"
+import { useEffect, useState, useRef } from "react";
+import { useParams } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Users,
+  Trophy,
+  Clock,
+  Share2,
+  Send,
+  MessageCircle,
+  Timer,
+} from "lucide-react";
 
 interface Question {
-  id: string
-  type: "multiple-choice" | "short-answer"
-  question: string
-  options?: string[]
-  correctAnswer?: string
-  explanation?: string
-  points: number
+  id: string;
+  type: "MULTIPLE_CHOICE" | "short-answer";
+  question: string;
+  options?: string[];
+  correctAnswer?: string;
+  explanation?: string;
+  points: number;
 }
 
 interface Room {
-  id: string
-  questions: Question[]
-  participants: string[]
-  currentQuestion: number
-  status: "waiting" | "active" | "finished"
-  scores: Record<string, number>
-  inviteCode?: string
-  timeLimit: number
+  id: string;
+  questions: Question[];
+  participants: string[];
+  currentQuestion: number;
+  status: "waiting" | "active" | "finished";
+  scores: Record<string, number>;
+  inviteCode?: string;
+  timeLimit: number;
 }
 
 interface Participant {
-  id: string
-  name: string
-  score: number
-  isReady: boolean
+  id: string;
+  name: string;
+  score: number;
+  isReady: boolean;
 }
 
 interface ChatMessage {
-  id: string
-  userId: string
-  userName: string
-  message: string
-  timestamp: number
-  type: "message" | "system"
+  id: string;
+  userId: string;
+  userName: string;
+  message: string;
+  timestamp: number;
+  type: "message" | "system";
 }
 
 export default function RoomPage() {
-  const params = useParams()
-  const roomId = params.id as string
-  const [room, setRoom] = useState<Room | null>(null)
-  const [participants, setParticipants] = useState<Participant[]>([])
-  const [currentUser, setCurrentUser] = useState<string>("")
-  const [userName, setUserName] = useState("")
-  const [hasJoined, setHasJoined] = useState(false)
-  const [selectedAnswer, setSelectedAnswer] = useState("")
-  const [textAnswer, setTextAnswer] = useState("")
-  const [timeLeft, setTimeLeft] = useState(30)
-  const [showResults, setShowResults] = useState(false)
-  const [hasSubmitted, setHasSubmitted] = useState(false)
-  const [timerRef, setTimerRef] = useState<NodeJS.Timeout | null>(null)
-  const [pollIntervalRef, setPollIntervalRef] = useState<NodeJS.Timeout | null>(null)
-  const [isLastQuestion, setIsLastQuestion] = useState(false)
-  const [quizFinished, setQuizFinished] = useState(false)
+  const params = useParams();
+  const roomId = params.id as string;
+  const [room, setRoom] = useState<Room | null>(null);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [currentUser, setCurrentUser] = useState<string>("");
+  const [userName, setUserName] = useState("");
+  const [hasJoined, setHasJoined] = useState(false);
+  const [selectedAnswer, setSelectedAnswer] = useState("");
+  const [textAnswer, setTextAnswer] = useState("");
+  const [timeLeft, setTimeLeft] = useState(30);
+  const [showResults, setShowResults] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [timerRef, setTimerRef] = useState<NodeJS.Timeout | null>(null);
+  const [pollIntervalRef, setPollIntervalRef] = useState<NodeJS.Timeout | null>(
+    null
+  );
+  const [isLastQuestion, setIsLastQuestion] = useState(false);
+  const [quizFinished, setQuizFinished] = useState(false);
+
+  // 개인별 문제 진행 상태 관리
+  const [userCurrentQuestion, setUserCurrentQuestion] = useState(0);
+  const [userAnswers, setUserAnswers] = useState<
+    Record<number, { answer: string; isCorrect: boolean; points: number }>
+  >({});
+  const [userScore, setUserScore] = useState(0);
 
   // WebSocket 관련 상태
-  const [socket, setSocket] = useState<Socket | null>(null)
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
-  const [newMessage, setNewMessage] = useState("")
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [isChatVisible, setIsChatVisible] = useState(true)
-  const [isConnected, setIsConnected] = useState(false)
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isChatVisible, setIsChatVisible] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
+
+  // WebSocket 연결 후 join 메시지 전송 (한 번만)
+  const [hasJoinedWebSocket, setHasJoinedWebSocket] = useState(false);
+  const [shouldAutoJoin, setShouldAutoJoin] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
 
   // 타이머 시작 함수
   const startTimer = (duration: number) => {
-    setTimeLeft(duration)
-    setHasSubmitted(false)
-
     if (timerRef) {
-      clearInterval(timerRef)
+      clearInterval(timerRef);
     }
-
-    const newTimer = setInterval(() => {
+    setTimeLeft(duration);
+    const newTimerRef = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          // 시간 종료 시 자동 제출
-          if (!hasSubmitted) {
-            autoSubmitAnswer()
-          }
-          return 0
+          clearInterval(newTimerRef);
+          autoSubmitAnswer();
+          return 0;
         }
-        return prev - 1
-      })
-    }, 1000)
-    
-    setTimerRef(newTimer)
-  }
+        return prev - 1;
+      });
+    }, 1000);
+    setTimerRef(newTimerRef);
+  };
 
   // 자동 제출 함수
   const autoSubmitAnswer = async () => {
-    if (!currentUser || !room || hasSubmitted) return
+    if (!currentUser || !room || hasSubmitted) return;
 
-    const answer = room.questions[room.currentQuestion].type === "multiple-choice" ? selectedAnswer : textAnswer
+    const answer =
+      room.questions[userCurrentQuestion].type === "MULTIPLE_CHOICE"
+        ? selectedAnswer
+        : textAnswer;
 
     try {
       await fetch(`http://localhost:8080/api/game/submit-answer`, {
@@ -115,76 +138,136 @@ export default function RoomPage() {
         body: JSON.stringify({
           roomId,
           userId: currentUser,
-          questionId: room.questions[room.currentQuestion].id,
+          questionId: room.questions[userCurrentQuestion].id,
           answer: answer || "",
           timestamp: Date.now(),
           isAutoSubmit: true,
         }),
-      })
+      });
     } catch (error) {
-      console.error("Failed to auto submit answer:", error)
+      console.error("Failed to auto submit answer:", error);
     }
 
-    setHasSubmitted(true)
-    setSelectedAnswer("")
-    setTextAnswer("")
-  }
+    setHasSubmitted(true);
+    setSelectedAnswer("");
+    setTextAnswer("");
+  };
 
   // 방 정보 폴링
   const pollRoomInfo = async () => {
     try {
-      const response = await fetch(`http://localhost:8080/api/game/room/${roomId}`)
+      const response = await fetch(
+        `http://localhost:8080/api/game/room/${roomId}`
+      );
       if (response.ok) {
-        const roomData = await response.json()
-        console.log("방 정보 수신:", roomData)
-        console.log("문제 개수:", roomData.questions?.length || 0)
+        const roomData = await response.json();
+        console.log("방 정보 수신:", roomData);
+        console.log("문제 개수:", roomData.questions?.length || 0);
         if (roomData.questions && roomData.questions.length > 0) {
-          console.log("첫 번째 문제:", roomData.questions[0])
+          console.log("첫 번째 문제:", roomData.questions[0]);
         }
-        
-        setRoom(roomData)
-        setParticipants(roomData.participants || [])
-        
-        if (roomData.timeLimit && !timerRef) {
-          setTimeLeft(roomData.timeLimit)
+        console.log(roomData);
+        setRoom(roomData);
+        setParticipants(roomData.participants || []);
+
+        // 방에 입장하지 않은 상태에서는 문제를 숨김
+        if (!hasJoined) {
+          setShowResults(false);
         }
       }
     } catch (error) {
-      console.error("Failed to poll room info:", error)
+      console.error("Failed to poll room info:", error);
     }
-  }
+  };
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const nameFromUrl = urlParams.get("name")
+    const urlParams = new URLSearchParams(window.location.search);
+    const nameFromUrl = urlParams.get("name");
     if (nameFromUrl) {
-      setUserName(nameFromUrl)
+      setUserName(nameFromUrl);
+      setShouldAutoJoin(true);
     }
 
     // 초기 방 정보 로드
-    pollRoomInfo()
+    pollRoomInfo();
 
     // 주기적으로 방 정보 업데이트 (5초마다)
-    const newPollInterval = setInterval(pollRoomInfo, 5000)
-    setPollIntervalRef(newPollInterval)
+    const newPollInterval = setInterval(pollRoomInfo, 5000);
+    setPollIntervalRef(newPollInterval);
 
     return () => {
       if (timerRef) {
-        clearInterval(timerRef)
+        clearInterval(timerRef);
       }
       if (pollIntervalRef) {
-        clearInterval(pollIntervalRef)
+        clearInterval(pollIntervalRef);
       }
       // WebSocket 연결 해제
-      disconnectWebSocket()
+      disconnectWebSocket();
+    };
+  }, [roomId]);
+
+  // URL에서 이름을 받았고 방 정보가 로드되었을 때 자동 입장
+  useEffect(() => {
+    if (shouldAutoJoin && room && !hasJoined && !isJoining && userName) {
+      // 자동으로 방에 입장
+      setShouldAutoJoin(false); // 한 번만 실행되도록
+      joinRoom();
     }
-  }, [roomId])
+  }, [shouldAutoJoin, room, userName, hasJoined, isJoining]);
+
+  // 방에 입장한 후 문제 표시를 위한 useEffect 추가
+  useEffect(() => {
+    if (
+      hasJoined &&
+      room &&
+      room.questions &&
+      room.questions.length > 0 &&
+      !timerRef
+    ) {
+      setShowResults(false);
+      setHasSubmitted(false);
+      setSelectedAnswer("");
+      setTextAnswer("");
+
+      // 타이머가 아직 시작되지 않았을 때만 시작
+      if (room.timeLimit) {
+        startTimer(room.timeLimit);
+      }
+    }
+  }, [hasJoined, room, timerRef]);
+
+  // WebSocket 연결 후 join 메시지 전송 (한 번만)
+  useEffect(() => {
+    if (
+      socket &&
+      socket.readyState === WebSocket.OPEN &&
+      currentUser &&
+      userName &&
+      room &&
+      hasJoined &&
+      !hasJoinedWebSocket
+    ) {
+      socket.send(
+        JSON.stringify({
+          type: "join",
+          roomId: room.id,
+          userId: currentUser,
+          userName: userName,
+        })
+      );
+      console.log("Join 메시지 전송됨");
+      setHasJoinedWebSocket(true);
+    }
+  }, [socket, currentUser, userName, room, hasJoined, hasJoinedWebSocket]);
 
   const joinRoom = async () => {
-    if (!userName.trim() || !room) return
+    // 중복 호출 방지
+    if (!userName.trim() || !room || hasJoined || isJoining) return;
 
-    const userId = `user_${Date.now()}`
-    
+    setIsJoining(true);
+    const userId = `user_${Date.now()}`;
+
     try {
       const response = await fetch(`http://localhost:8080/api/game/join-room`, {
         method: "POST",
@@ -196,129 +279,193 @@ export default function RoomPage() {
           userId,
           userName: userName.trim(),
         }),
-      })
+      });
 
       if (response.ok) {
-        setCurrentUser(userId)
-        setHasJoined(true)
-        
-        // WebSocket 연결
-        connectWebSocket()
-        
-        // 방 입장 시 타이머 시작
-        startTimer(room.timeLimit || 30)
-      }
-    } catch (error) {
-      console.error("Failed to join room:", error)
-    }
-  }
+        setCurrentUser(userId);
+        setHasJoined(true);
+        setHasJoinedWebSocket(false);
+        setShowResults(false);
+        setHasSubmitted(false);
+        setSelectedAnswer("");
+        setTextAnswer("");
 
-  const submitAnswer = async () => {
-    if (!currentUser || !room || hasSubmitted) return
+        // 개인 문제 진행 상태 초기화
+        setUserCurrentQuestion(0);
+        setUserAnswers({});
+        setUserScore(0);
+        setIsLastQuestion(false);
+        setQuizFinished(false);
 
-    const answer = room.questions[room.currentQuestion].type === "multiple-choice" ? selectedAnswer : textAnswer
+        // WebSocket이 연결되어 있지 않을 때만 연결
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          connectWebSocket();
+        }
 
-    try {
-      const response = await fetch(`http://localhost:8080/api/game/submit-answer`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          roomId,
-          userId: currentUser,
-          questionId: room.questions[room.currentQuestion].id,
-          answer,
-          timestamp: Date.now(),
-          isAutoSubmit: false,
-        }),
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        setShowResults(true)
-        
-        // 타이머 정지
-        if (timerRef) {
-          clearInterval(timerRef)
+        // 방 입장 시 타이머 시작 (타이머가 없을 때만)
+        if (!timerRef) {
+          startTimer(room.timeLimit || 30);
         }
       }
     } catch (error) {
-      console.error("Failed to submit answer:", error)
+      console.error("Failed to join room:", error);
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  const submitAnswer = async () => {
+    if (!currentUser || !room || hasSubmitted) return;
+
+    const answer =
+      room.questions[userCurrentQuestion].type === "MULTIPLE_CHOICE"
+        ? selectedAnswer
+        : textAnswer;
+
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/game/submit-answer`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            roomId,
+            userId: currentUser,
+            questionId: room.questions[userCurrentQuestion].id,
+            answer,
+            timestamp: Date.now(),
+            isAutoSubmit: false,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+
+        // 개인 답안 저장
+        const currentQuestion = room.questions[userCurrentQuestion];
+        const isCorrect =
+          currentQuestion.type === "MULTIPLE_CHOICE"
+            ? answer === currentQuestion.correctAnswer
+            : true; // 단답식은 일단 정답으로 처리
+
+        const points = isCorrect ? currentQuestion.points : 0;
+
+        setUserAnswers((prev) => ({
+          ...prev,
+          [userCurrentQuestion]: {
+            answer,
+            isCorrect,
+            points,
+          },
+        }));
+
+        setUserScore((prev) => prev + points);
+        setShowResults(true);
+
+        // 타이머 정지
+        if (timerRef) {
+          clearInterval(timerRef);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to submit answer:", error);
     }
 
-    setHasSubmitted(true)
-    setSelectedAnswer("")
-    setTextAnswer("")
-  }
+    setHasSubmitted(true);
+    setSelectedAnswer("");
+    setTextAnswer("");
+  };
 
   const sendChatMessage = () => {
-    if (!newMessage.trim() || !socket || !currentUser || !room) return
+    if (
+      !chatInput.trim() ||
+      !socket ||
+      socket.readyState !== WebSocket.OPEN ||
+      !currentUser ||
+      !userName
+    )
+      return;
 
-    socket.emit('chat', {
-      roomId: room.id,
+    const message = {
+      type: "chat",
+      roomId: roomId,
       userId: currentUser,
       userName: userName,
-      message: newMessage.trim(),
-      timestamp: Date.now()
-    })
+      message: chatInput.trim(),
+      timestamp: new Date().toISOString(),
+    };
 
-    setNewMessage("")
-  }
+    socket.send(JSON.stringify(message));
+    console.log("채팅 메시지 전송:", message);
+    setChatInput("");
+  };
 
   const copyRoomLink = () => {
-    navigator.clipboard.writeText(window.location.href)
-  }
+    navigator.clipboard.writeText(window.location.href);
+  };
 
   const toggleChat = () => {
-    setIsChatVisible(!isChatVisible)
+    setIsChatVisible(!isChatVisible);
     if (!isChatVisible) {
-      setUnreadCount(0)
+      setUnreadCount(0);
     }
-  }
+  };
 
   const copyInviteCode = () => {
     if (room?.inviteCode) {
-      navigator.clipboard.writeText(room.inviteCode)
+      navigator.clipboard.writeText(room.inviteCode);
     }
-  }
+  };
 
   const nextQuestion = async () => {
-    if (!room) return
+    if (!room) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/api/game/next-question`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          roomId: room.id,
-        }),
-      })
+      const response = await fetch(
+        `http://localhost:8080/api/game/next-question`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            roomId: room.id,
+          }),
+        }
+      );
 
       if (response.ok) {
-        const data = await response.json()
-        
+        const data = await response.json();
+
         if (data.status === "finished") {
-          setQuizFinished(true)
-          setShowResults(false)
+          setQuizFinished(true);
+          setShowResults(false);
         } else {
           // 다음 문제 정보로 업데이트
-          setRoom(prev => prev ? {
-            ...prev,
-            currentQuestion: data.currentQuestion
-          } : null)
-          
-          setIsLastQuestion(data.isLastQuestion)
-          setShowResults(false)
-          setHasSubmitted(false)
-          setSelectedAnswer("")
-          setTextAnswer("")
-          
+          setRoom((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  currentQuestion: data.currentQuestion,
+                }
+              : null
+          );
+
+          setIsLastQuestion(data.isLastQuestion);
+          setShowResults(false);
+          setHasSubmitted(false);
+          setSelectedAnswer("");
+          setTextAnswer("");
+
           // 타이머 재시작
-          startTimer(room.timeLimit || 30)
-          
+          if (timerRef) {
+            clearInterval(timerRef);
+          }
+          startTimer(room.timeLimit || 30);
+
           // 시스템 메시지 추가
           const systemMessage: ChatMessage = {
             id: `system_${Date.now()}`,
@@ -327,88 +474,141 @@ export default function RoomPage() {
             message: `문제 ${data.currentQuestion + 1}번이 시작되었습니다.`,
             timestamp: Date.now(),
             type: "system",
-          }
-          setChatMessages(prev => [...prev, systemMessage])
+          };
+          setChatMessages((prev) => [...prev, systemMessage]);
         }
       }
     } catch (error) {
-      console.error("Failed to move to next question:", error)
+      console.error("Failed to move to next question:", error);
     }
-  }
+  };
+
+  // 개인별 다음 문제로 넘어가기
+  const nextUserQuestion = () => {
+    if (!room || userCurrentQuestion >= room.questions.length - 1) {
+      setQuizFinished(true);
+      setShowResults(false);
+      return;
+    }
+
+    setUserCurrentQuestion((prev) => prev + 1);
+    setShowResults(false);
+    setHasSubmitted(false);
+    setSelectedAnswer("");
+    setTextAnswer("");
+
+    // 타이머 재시작
+    if (timerRef) {
+      clearInterval(timerRef);
+    }
+    startTimer(room.timeLimit || 30);
+
+    // 마지막 문제인지 확인
+    setIsLastQuestion(userCurrentQuestion + 1 >= room.questions.length - 1);
+  };
 
   // WebSocket 연결
   const connectWebSocket = () => {
-    const socketInstance = io('http://localhost:8080')
-    
-    socketInstance.on('connect', () => {
-      console.log('WebSocket 연결됨')
-      setIsConnected(true)
-      
-      // 방 입장 메시지 전송
-      if (currentUser && userName && room) {
-        socketInstance.emit('join', {
-          roomId: room.id,
-          userId: currentUser,
-          userName: userName
-        })
-      }
-    })
-    
-    socketInstance.on('disconnect', () => {
-      console.log('WebSocket 연결 해제됨')
-      setIsConnected(false)
-    })
-    
-    // 채팅 메시지 수신
-    socketInstance.on('chat', (data) => {
-      console.log('WebSocket 메시지 수신:', data)
-      
-      if (data.type === 'chat') {
-        const chatMessage: ChatMessage = {
-          id: `msg_${Date.now()}`,
-          userId: data.userId,
-          userName: data.userName,
-          message: data.message,
-          timestamp: data.timestamp,
-          type: 'message'
+    // 이미 연결되어 있으면 연결하지 않음
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      console.log("WebSocket 이미 연결됨");
+      return;
+    }
+
+    try {
+      const ws = new WebSocket("ws://localhost:8080/ws");
+
+      ws.onopen = () => {
+        console.log("WebSocket 연결됨");
+        setIsConnected(true);
+        setSocket(ws);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket 연결 해제됨");
+        setIsConnected(false);
+        setHasJoinedWebSocket(false); // join 상태 초기화
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket 오류:", error);
+        setIsConnected(false);
+        setHasJoinedWebSocket(false); // join 상태 초기화
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log("WebSocket 메시지 수신:", data);
+
+          if (data.type === "chat") {
+            const chatMessage: ChatMessage = {
+              id: `msg_${Date.now()}`,
+              userId: data.userId,
+              userName: data.userName,
+              message: data.message,
+              timestamp: data.timestamp,
+              type: "message",
+            };
+            setChatMessages((prev) => [...prev, chatMessage]);
+            if (!isChatVisible) {
+              setUnreadCount((prev) => prev + 1);
+            }
+          } else if (data.type === "system") {
+            const systemMessage: ChatMessage = {
+              id: `system_${Date.now()}`,
+              userId: "system",
+              userName: "시스템",
+              message: data.message,
+              timestamp: data.timestamp,
+              type: "system",
+            };
+            setChatMessages((prev) => [...prev, systemMessage]);
+          } else if (data.type === "participants-update") {
+            setParticipants(data.participants || []);
+          }
+        } catch (error) {
+          console.error("메시지 파싱 오류:", error);
         }
-        setChatMessages(prev => [...prev, chatMessage])
-        if (!isChatVisible) {
-          setUnreadCount(prev => prev + 1)
-        }
-      } else if (data.type === 'system') {
-        const systemMessage: ChatMessage = {
-          id: `system_${Date.now()}`,
-          userId: 'system',
-          userName: '시스템',
-          message: data.message,
-          timestamp: data.timestamp,
-          type: 'system'
-        }
-        setChatMessages(prev => [...prev, systemMessage])
-      } else if (data.type === 'participants-update') {
-        setParticipants(data.participants || [])
-      }
-    })
-    
-    setSocket(socketInstance)
-  }
+      };
+    } catch (error) {
+      console.error("WebSocket 연결 실패:", error);
+      setIsConnected(false);
+      setHasJoinedWebSocket(false); // join 상태 초기화
+    }
+  };
 
   // WebSocket 연결 해제
   const disconnectWebSocket = () => {
     if (socket) {
       // 퇴장 메시지 전송
       if (currentUser && userName && room) {
-        socket.emit('leave', {
-          roomId: room.id,
-          userId: currentUser,
-          userName: userName
-        })
+        socket.send(
+          JSON.stringify({
+            type: "leave",
+            roomId: room.id,
+            userId: currentUser,
+            userName: userName,
+          })
+        );
       }
-      socket.disconnect()
+      socket.close();
     }
-    setIsConnected(false)
-  }
+    setIsConnected(false);
+  };
+
+  // 프로그레스바 색상 계산 함수
+  const getProgressColor = (timeLeft: number, totalTime: number) => {
+    const percentage = (timeLeft / totalTime) * 100;
+    if (percentage > 50) return "bg-green-500";
+    if (percentage > 25) return "bg-yellow-500";
+    return "bg-red-500";
+  };
+
+  // 프로그레스바 값 계산
+  const getProgressValue = (timeLeft: number, totalTime: number) => {
+    return Math.max(0, (timeLeft / totalTime) * 100);
+  };
 
   if (!room) {
     return (
@@ -418,7 +618,19 @@ export default function RoomPage() {
           <p className="text-gray-600">룸 정보를 불러오는 중...</p>
         </div>
       </div>
-    )
+    );
+  }
+
+  // URL에서 이름이 있고 아직 입장하지 않았으며 자동 입장 대기 중일 때는 로딩 화면 표시
+  if (shouldAutoJoin && !hasJoined && userName) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">방에 입장하는 중...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!hasJoined) {
@@ -438,8 +650,12 @@ export default function RoomPage() {
                 onKeyPress={(e) => e.key === "Enter" && joinRoom()}
               />
             </div>
-            <Button onClick={joinRoom} className="w-full" disabled={!userName.trim()}>
-              룸 참여하기
+            <Button
+              onClick={joinRoom}
+              className="w-full"
+              disabled={!userName.trim() || isJoining}
+            >
+              {isJoining ? "입장 중..." : "룸 참여하기"}
             </Button>
             <div className="text-center">
               <Button variant="outline" size="sm" onClick={copyRoomLink}>
@@ -450,11 +666,11 @@ export default function RoomPage() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
-  const currentQuestion = room.questions[room.currentQuestion]
-  const progress = ((room.currentQuestion + 1) / room.questions.length) * 100
+  const currentQuestion = room.questions[userCurrentQuestion];
+  const progress = ((userCurrentQuestion + 1) / room.questions.length) * 100;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -468,74 +684,136 @@ export default function RoomPage() {
                 <Users className="w-4 h-4" />
                 {participants.length}명 참여
               </Badge>
-              <Badge
-                variant={timeLeft <= 10 ? "destructive" : "outline"}
-                className={`flex items-center gap-1 ${timeLeft <= 10 ? "animate-pulse" : ""}`}
-              >
+              <div className="flex items-center gap-2 min-w-[200px]">
                 <Timer className="w-4 h-4" />
-                {timeLeft}초
-              </Badge>
-              <Button variant="outline" size="sm" onClick={toggleChat} className="relative">
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-gray-600">남은 시간</span>
+                    <span
+                      className={`text-xs font-medium ${
+                        timeLeft <= 10 ? "text-red-600" : "text-gray-600"
+                      }`}
+                    >
+                      {timeLeft}초
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(
+                        timeLeft,
+                        room.timeLimit
+                      )}`}
+                      style={{
+                        width: `${getProgressValue(timeLeft, room.timeLimit)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleChat}
+                className="relative"
+              >
                 <MessageCircle className="w-4 h-4 mr-2" />
                 채팅
                 {unreadCount > 0 && (
-                  <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 text-xs">{unreadCount}</Badge>
+                  <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 text-xs">
+                    {unreadCount}
+                  </Badge>
                 )}
               </Button>
             </div>
           </div>
-          <Progress value={progress} className="h-2" />
+
           <div className="flex justify-between items-center mt-2">
             <p className="text-sm text-gray-600">
-              문제 {room.currentQuestion + 1} / {room.questions.length}
+              문제 {userCurrentQuestion + 1} / {room.questions.length}
             </p>
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-gray-500" />
-              <span className="text-sm text-gray-600">문제당 {room.timeLimit}초</span>
+              <span className="text-sm text-gray-600">
+                문제당 {room.timeLimit}초
+              </span>
             </div>
           </div>
         </div>
 
         <div className="grid lg:grid-cols-4 gap-6">
           {/* 메인 문제 영역 */}
-          <div className={`${isChatVisible ? "lg:col-span-2" : "lg:col-span-3"}`}>
+          <div
+            className={`${isChatVisible ? "lg:col-span-2" : "lg:col-span-3"}`}
+          >
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span>문제 {room.currentQuestion + 1}</span>
+                  <span>문제 {userCurrentQuestion + 1}</span>
                   <div className="flex items-center gap-2">
                     <Badge>{currentQuestion.points}점</Badge>
-                    <Badge variant={timeLeft <= 10 ? "destructive" : "secondary"}>{timeLeft}초 남음</Badge>
+                    <div className="flex items-center gap-2 min-w-[120px]">
+                      <div className="flex-1">
+                        <div className="text-xs text-gray-600 mb-1">
+                          {timeLeft}초
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full transition-all duration-300 ${getProgressColor(
+                              timeLeft,
+                              room.timeLimit
+                            )}`}
+                            style={{
+                              width: `${getProgressValue(
+                                timeLeft,
+                                room.timeLimit
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </CardTitle>
                 <CardDescription>
-                  유형: {currentQuestion.type === "multiple-choice" ? "객관식" : "단답식"}
-                  {hasSubmitted && <span className="ml-2 text-green-600">✓ 제출완료</span>}
+                  유형:{" "}
+                  {currentQuestion.type === "MULTIPLE_CHOICE"
+                    ? "객관식"
+                    : "단답식"}
+                  {hasSubmitted && (
+                    <span className="ml-2 text-green-600">✓ 제출완료</span>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="text-lg font-medium">{currentQuestion.question}</div>
+                <div className="text-lg font-medium">
+                  {currentQuestion.question}
+                </div>
 
-                {currentQuestion.type === "multiple-choice" && currentQuestion.options && (
-                  <div className="space-y-2">
-                    {currentQuestion.options.map((option, index) => (
-                      <div
-                        key={index}
-                        className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                          selectedAnswer === option
-                            ? "bg-blue-100 border-blue-500"
-                            : hasSubmitted
+                {currentQuestion.type === "MULTIPLE_CHOICE" &&
+                  currentQuestion.options && (
+                    <div className="space-y-2">
+                      {currentQuestion.options.map((option, index) => (
+                        <div
+                          key={index}
+                          className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                            selectedAnswer === option
+                              ? "bg-blue-100 border-blue-500"
+                              : hasSubmitted
                               ? "opacity-50 cursor-not-allowed"
                               : "hover:bg-gray-50"
-                        }`}
-                        onClick={() => !hasSubmitted && setSelectedAnswer(option)}
-                      >
-                        <span className="font-medium mr-2">{String.fromCharCode(65 + index)}.</span>
-                        {option}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                          }`}
+                          onClick={() =>
+                            !hasSubmitted && setSelectedAnswer(option)
+                          }
+                        >
+                          <span className="font-medium mr-2">
+                            {String.fromCharCode(65 + index)}.
+                          </span>
+                          {option}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                 {currentQuestion.type === "short-answer" && (
                   <Input
@@ -543,7 +821,9 @@ export default function RoomPage() {
                     value={textAnswer}
                     onChange={(e) => setTextAnswer(e.target.value)}
                     disabled={hasSubmitted}
-                    onKeyPress={(e) => e.key === "Enter" && !hasSubmitted && submitAnswer()}
+                    onKeyPress={(e) =>
+                      e.key === "Enter" && !hasSubmitted && submitAnswer()
+                    }
                   />
                 )}
 
@@ -552,8 +832,10 @@ export default function RoomPage() {
                   className="w-full"
                   disabled={
                     hasSubmitted ||
-                    (currentQuestion.type === "multiple-choice" && !selectedAnswer) ||
-                    (currentQuestion.type === "short-answer" && !textAnswer.trim())
+                    (currentQuestion.type === "MULTIPLE_CHOICE" &&
+                      !selectedAnswer) ||
+                    (currentQuestion.type === "short-answer" &&
+                      !textAnswer.trim())
                   }
                 >
                   {hasSubmitted ? "제출완료" : "답안 제출"}
@@ -575,7 +857,9 @@ export default function RoomPage() {
                 <CardContent>
                   <p>{currentQuestion.explanation}</p>
                   {currentQuestion.correctAnswer && (
-                    <p className="mt-2 font-medium text-green-600">정답: {currentQuestion.correctAnswer}</p>
+                    <p className="mt-2 font-medium text-green-600">
+                      정답: {currentQuestion.correctAnswer}
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -587,23 +871,32 @@ export default function RoomPage() {
                 <CardContent className="pt-6">
                   {quizFinished ? (
                     <div className="text-center">
-                      <h3 className="text-xl font-bold text-green-600 mb-4">🎉 퀴즈 완료!</h3>
-                      <p className="text-gray-600 mb-4">모든 문제를 풀었습니다.</p>
-                      <Button onClick={() => window.location.href = "/"} variant="outline">
+                      <h3 className="text-xl font-bold text-green-600 mb-4">
+                        🎉 퀴즈 완료!
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        모든 문제를 풀었습니다.
+                      </p>
+                      <Button
+                        onClick={() => (window.location.href = "/")}
+                        variant="outline"
+                      >
                         메인으로 돌아가기
                       </Button>
                     </div>
                   ) : (
                     <div className="text-center">
-                      <Button 
-                        onClick={nextQuestion} 
+                      <Button
+                        onClick={nextUserQuestion}
                         className="w-full bg-green-600 hover:bg-green-700"
                         size="lg"
                       >
                         {isLastQuestion ? "퀴즈 완료하기" : "다음 문제로"}
                       </Button>
                       {isLastQuestion && (
-                        <p className="text-sm text-gray-500 mt-2">마지막 문제입니다</p>
+                        <p className="text-sm text-gray-500 mt-2">
+                          마지막 문제입니다
+                        </p>
                       )}
                     </div>
                   )}
@@ -625,7 +918,9 @@ export default function RoomPage() {
               <CardContent>
                 <div className="text-center">
                   <div className="bg-gray-100 rounded-lg p-4 mb-3">
-                    <div className="text-2xl font-mono font-bold text-blue-600">{room.inviteCode || "ABC123"}</div>
+                    <div className="text-2xl font-mono font-bold text-blue-600">
+                      {room.inviteCode || "ABC123"}
+                    </div>
                   </div>
                   <Button variant="outline" size="sm" onClick={copyInviteCode}>
                     <Share2 className="w-4 h-4 mr-2" />
@@ -645,9 +940,24 @@ export default function RoomPage() {
               <CardContent>
                 <div className="space-y-2">
                   {participants.map((participant) => (
-                    <div key={participant.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                      <span className="font-medium">{participant.name}</span>
-                      <Badge variant="secondary">{participant.score}점</Badge>
+                    <div
+                      key={participant.id}
+                      className={`flex items-center justify-between p-2 rounded ${
+                        participant.id === currentUser
+                          ? "bg-blue-100 border border-blue-300"
+                          : "bg-gray-50"
+                      }`}
+                    >
+                      <span className="font-medium">
+                        {participant.name}
+                        {participant.id === currentUser && " (나)"}
+                      </span>
+                      <Badge variant="secondary">
+                        {participant.id === currentUser
+                          ? userScore
+                          : participant.score}
+                        점
+                      </Badge>
                     </div>
                   ))}
                 </div>
@@ -664,21 +974,41 @@ export default function RoomPage() {
               <CardContent>
                 <div className="space-y-2">
                   {participants
-                    .sort((a, b) => b.score - a.score)
-                    .map((participant, index) => (
+                    .map((participant: Participant) => ({
+                      ...participant,
+                      displayScore:
+                        participant.id === currentUser
+                          ? userScore
+                          : participant.score,
+                    }))
+                    .sort((a: any, b: any) => b.displayScore - a.displayScore)
+                    .map((participant: any, index: number) => (
                       <div
                         key={participant.id}
                         className={`flex items-center justify-between p-2 rounded ${
-                          index === 0 ? "bg-yellow-100 border border-yellow-300" : "bg-gray-50"
+                          index === 0
+                            ? "bg-yellow-100 border border-yellow-300"
+                            : participant.id === currentUser
+                            ? "bg-blue-100 border border-blue-300"
+                            : "bg-gray-50"
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className={`font-bold ${index === 0 ? "text-yellow-600" : "text-gray-500"}`}>
+                          <span
+                            className={`font-bold ${
+                              index === 0 ? "text-yellow-600" : "text-gray-500"
+                            }`}
+                          >
                             #{index + 1}
                           </span>
-                          <span className="font-medium">{participant.name}</span>
+                          <span className="font-medium">
+                            {participant.name}
+                            {participant.id === currentUser && " (나)"}
+                          </span>
                         </div>
-                        <span className="font-bold">{participant.score}점</span>
+                        <span className="font-bold">
+                          {participant.displayScore}점
+                        </span>
                       </div>
                     ))}
                 </div>
@@ -696,7 +1026,12 @@ export default function RoomPage() {
                       <MessageCircle className="w-5 h-5" />
                       실시간 채팅
                     </span>
-                    <Button variant="ghost" size="sm" onClick={toggleChat} className="h-6 w-6 p-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleChat}
+                      className="h-6 w-6 p-0"
+                    >
                       ×
                     </Button>
                   </CardTitle>
@@ -706,27 +1041,45 @@ export default function RoomPage() {
                   <ScrollArea className="flex-1 px-4">
                     <div className="space-y-3 pb-4">
                       {chatMessages.map((msg) => (
-                        <div key={msg.id} className={`${msg.type === "system" ? "text-center" : ""}`}>
+                        <div
+                          key={msg.id}
+                          className={`${
+                            msg.type === "system" ? "text-center" : ""
+                          }`}
+                        >
                           {msg.type === "system" ? (
                             <div className="text-xs text-gray-500 bg-gray-100 rounded-full px-3 py-1 inline-block">
                               {msg.message}
                             </div>
                           ) : (
-                            <div className={`${msg.userId === currentUser ? "text-right" : "text-left"}`}>
+                            <div
+                              className={`${
+                                msg.userId === currentUser
+                                  ? "text-right"
+                                  : "text-left"
+                              }`}
+                            >
                               <div
                                 className={`inline-block max-w-[80%] p-2 rounded-lg ${
-                                  msg.userId === currentUser ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-900"
+                                  msg.userId === currentUser
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-gray-100 text-gray-900"
                                 }`}
                               >
                                 {msg.userId !== currentUser && (
-                                  <div className="text-xs font-medium mb-1 opacity-70">{msg.userName}</div>
+                                  <div className="text-xs font-medium mb-1 opacity-70">
+                                    {msg.userName}
+                                  </div>
                                 )}
                                 <div className="text-sm">{msg.message}</div>
                                 <div className={`text-xs mt-1 opacity-70`}>
-                                  {new Date(msg.timestamp).toLocaleTimeString("ko-KR", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
+                                  {new Date(msg.timestamp).toLocaleTimeString(
+                                    "ko-KR",
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    }
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -743,21 +1096,28 @@ export default function RoomPage() {
                     <div className="flex gap-2">
                       <Input
                         placeholder="메시지를 입력하세요..."
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
                         onKeyPress={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault()
-                            sendChatMessage()
+                            e.preventDefault();
+                            sendChatMessage();
                           }
                         }}
                         className="flex-1"
                       />
-                      <Button onClick={sendChatMessage} disabled={!newMessage.trim()} size="sm" className="px-3">
+                      <Button
+                        onClick={sendChatMessage}
+                        disabled={!chatInput.trim()}
+                        size="sm"
+                        className="px-3"
+                      >
                         <Send className="w-4 h-4" />
                       </Button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Enter로 전송, Shift+Enter로 줄바꿈</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Enter로 전송, Shift+Enter로 줄바꿈
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -766,5 +1126,5 @@ export default function RoomPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
