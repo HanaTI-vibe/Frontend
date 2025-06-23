@@ -15,6 +15,13 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Users,
   Trophy,
   Clock,
@@ -22,6 +29,8 @@ import {
   Send,
   MessageCircle,
   Timer,
+  Medal,
+  Star,
 } from "lucide-react";
 
 interface Question {
@@ -84,6 +93,8 @@ export default function RoomPage() {
   );
   const [isLastQuestion, setIsLastQuestion] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
+  const [showFinalScoreModal, setShowFinalScoreModal] = useState(false);
+  const [finalRanking, setFinalRanking] = useState<any[]>([]);
 
   // 개인별 문제 진행 상태 관리
   const [userCurrentQuestion, setUserCurrentQuestion] = useState(0);
@@ -104,6 +115,23 @@ export default function RoomPage() {
   const [hasJoinedWebSocket, setHasJoinedWebSocket] = useState(false);
   const [shouldAutoJoin, setShouldAutoJoin] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+
+  // 채팅 스크롤 관리
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  // 채팅 스크롤을 아래로 이동
+  const scrollToBottom = () => {
+    if (chatScrollRef.current) {
+      // ScrollArea 컴포넌트 내부의 실제 스크롤 요소를 찾아서 스크롤
+      const scrollElement = chatScrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (scrollElement) {
+        scrollElement.scrollTop = scrollElement.scrollHeight;
+      } else {
+        // 백업: 직접 스크롤
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+    }
+  };
 
   // 타이머 시작 함수
   const startTimer = (duration: number) => {
@@ -242,6 +270,17 @@ export default function RoomPage() {
             clearInterval(timerRef);
           }
           
+          // 최종 순위 계산
+          const ranking = roomData.participants
+            .map((participant: Participant) => ({
+              ...participant,
+              displayScore: participant.id === currentUser ? userScore : participant.score,
+            }))
+            .sort((a: any, b: any) => b.displayScore - a.displayScore);
+          
+          setFinalRanking(ranking);
+          setShowFinalScoreModal(true);
+          
           // 시스템 메시지 추가
           const systemMessage: ChatMessage = {
             id: `system_${Date.now()}`,
@@ -344,6 +383,11 @@ export default function RoomPage() {
       setHasJoinedWebSocket(true);
     }
   }, [socket, currentUser, userName, room, hasJoined, hasJoinedWebSocket]);
+
+  // 채팅 메시지가 변경될 때마다 스크롤을 아래로 이동
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatMessages]);
 
   const joinRoom = async () => {
     // 중복 호출 방지
@@ -496,6 +540,9 @@ export default function RoomPage() {
     socket.send(JSON.stringify(message));
     console.log("채팅 메시지 전송:", message);
     setChatInput("");
+    
+    // 메시지 전송 후 스크롤
+    setTimeout(scrollToBottom, 100);
   };
 
   const copyRoomLink = () => {
@@ -512,6 +559,31 @@ export default function RoomPage() {
   const copyInviteCode = () => {
     if (room?.inviteCode) {
       navigator.clipboard.writeText(room.inviteCode);
+    }
+  };
+
+  const goToMain = () => {
+    try {
+      // WebSocket 연결 해제
+      disconnectWebSocket();
+      
+      // 타이머 정리
+      if (timerRef) {
+        clearInterval(timerRef);
+      }
+      if (pollIntervalRef) {
+        clearInterval(pollIntervalRef);
+      }
+      
+      // 상태 초기화
+      setShowFinalScoreModal(false);
+      
+      // 메인 페이지로 강제 이동
+      window.location.replace("/");
+    } catch (error) {
+      console.error("메인 이동 중 오류:", error);
+      // 오류가 발생해도 강제 이동
+      window.location.href = "/";
     }
   };
 
@@ -587,6 +659,19 @@ export default function RoomPage() {
           setShowResultsLatch(false);
           if (timerRef) {
             clearInterval(timerRef);
+          }
+          
+          // 최종 순위 계산
+          if (data.finalScores) {
+            const ranking = data.finalScores
+              .map((participant: Participant) => ({
+                ...participant,
+                displayScore: participant.id === currentUser ? userScore : participant.score,
+              }))
+              .sort((a: any, b: any) => b.displayScore - a.displayScore);
+            
+            setFinalRanking(ranking);
+            setShowFinalScoreModal(true);
           }
         } else {
           // 다음 문제 정보로 업데이트
@@ -743,6 +828,9 @@ export default function RoomPage() {
             if (timerRef) {
               clearInterval(timerRef);
             }
+            
+            // 최종 순위 계산을 위해 방 정보 폴링
+            pollRoomInfo();
             
             // 시스템 메시지 추가
             const systemMessage: ChatMessage = {
@@ -1370,11 +1458,20 @@ export default function RoomPage() {
                         🎉 퀴즈 완료!
                       </h3>
                       <p className="text-gray-600 mb-4">
-                        모든 문제를 풀었습니다.
+                        모든 문제를 풀었습니다. 최종 결과를 확인해보세요!
                       </p>
                       <Button
-                        onClick={() => (window.location.href = "/")}
+                        onClick={() => setShowFinalScoreModal(true)}
+                        className="w-full bg-blue-600 hover:bg-blue-700 mb-3"
+                        size="lg"
+                      >
+                        <Trophy className="w-4 h-4 mr-2" />
+                        최종 결과 보기
+                      </Button>
+                      <Button
+                        onClick={goToMain}
                         variant="outline"
+                        className="w-full"
                       >
                         메인으로 돌아가기
                       </Button>
@@ -1531,17 +1628,21 @@ export default function RoomPage() {
                       variant="ghost"
                       size="sm"
                       onClick={toggleChat}
-                      className="h-6 w-6 p-0"
+                      className="text-xs px-2 py-1 h-auto"
                     >
-                      ×
+                      숨기기
                     </Button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col p-0">
                   {/* 채팅 메시지 영역 */}
-                  <ScrollArea className="flex-1 px-4">
-                    <div className="space-y-3 pb-4">
-                      {chatMessages.map((msg) => (
+                  <div className="flex-1 overflow-hidden">
+                    <ScrollArea 
+                      ref={chatScrollRef}
+                      className="h-full px-4"
+                    >
+                      <div className="space-y-3 pb-4 min-h-full">
+                        {chatMessages.map((msg) => (
                         <div
                           key={msg.id}
                           className={`${
@@ -1586,9 +1687,10 @@ export default function RoomPage() {
                             </div>
                           )}
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
 
                   <Separator />
 
@@ -1626,6 +1728,137 @@ export default function RoomPage() {
           )}
         </div>
       </div>
+
+      {/* 최종 스코어 모달 */}
+      <Dialog open={showFinalScoreModal} onOpenChange={setShowFinalScoreModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-center text-2xl font-bold text-green-600 flex items-center justify-center gap-2">
+              <Trophy className="w-8 h-8" />
+              🎉 퀴즈 완료! 🎉
+            </DialogTitle>
+            <DialogDescription className="text-center text-lg">
+              모든 문제를 완료했습니다. 최종 결과를 확인해보세요!
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* 내 점수 하이라이트 */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200">
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">내 최종 점수</h3>
+                <div className="text-4xl font-bold text-blue-600 mb-2">{userScore}점</div>
+                <div className="text-sm text-gray-600">
+                  총 {room?.questions?.length || 0}문제 중 {Object.keys(userAnswers).length}문제 완료
+                </div>
+              </div>
+            </div>
+
+            {/* 전체 순위 */}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">🏆 최종 순위</h3>
+              <div className="space-y-3">
+                {finalRanking.map((participant, index) => {
+                  const isCurrentUser = participant.id === currentUser;
+                  const isWinner = index === 0;
+                  const isMedal = index < 3;
+                  
+                  return (
+                    <div
+                      key={participant.id}
+                      className={`flex items-center justify-between p-4 rounded-lg border-2 ${
+                        isCurrentUser
+                          ? "bg-blue-100 border-blue-300 ring-2 ring-blue-400"
+                          : isWinner
+                          ? "bg-yellow-100 border-yellow-300"
+                          : isMedal
+                          ? "bg-gray-100 border-gray-300"
+                          : "bg-white border-gray-200"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold ${
+                          isWinner
+                            ? "bg-yellow-500 text-white"
+                            : isMedal
+                            ? "bg-gray-400 text-white"
+                            : "bg-gray-200 text-gray-600"
+                        }`}>
+                          {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index + 1}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-gray-800">
+                            {participant.name}
+                            {isCurrentUser && " (나)"}
+                          </div>
+                          {isWinner && (
+                            <div className="text-sm text-yellow-600 font-medium">
+                              🎉 우승자!
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-bold text-gray-800">
+                          {participant.displayScore}점
+                        </span>
+                        {isMedal && (
+                          <Medal className={`w-5 h-5 ${
+                            isWinner ? "text-yellow-500" : "text-gray-400"
+                          }`} />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 통계 정보 */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-gray-700 mb-3 text-center">📊 내 상세 결과</h4>
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-bold text-green-600">
+                    {Object.values(userAnswers).filter(answer => answer.isCorrect).length}
+                  </div>
+                  <div className="text-sm text-gray-600">정답</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-red-600">
+                    {Object.values(userAnswers).filter(answer => !answer.isCorrect).length}
+                  </div>
+                  <div className="text-sm text-gray-600">오답</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-blue-600">
+                    {Math.round((Object.values(userAnswers).filter(answer => answer.isCorrect).length / Object.keys(userAnswers).length) * 100) || 0}%
+                  </div>
+                  <div className="text-sm text-gray-600">정답률</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 버튼 영역 */}
+            <div className="flex gap-3">
+              <Button
+                onClick={goToMain}
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                size="lg"
+              >
+                메인으로 돌아가기
+              </Button>
+              <Button
+                onClick={() => setShowFinalScoreModal(false)}
+                variant="outline"
+                size="lg"
+              >
+                계속 보기
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
