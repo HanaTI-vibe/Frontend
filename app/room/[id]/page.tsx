@@ -26,7 +26,7 @@ import {
 
 interface Question {
   id: string;
-  type: "MULTIPLE_CHOICE" | "short-answer";
+  type: "MULTIPLE_CHOICE" | "multiple_choice" | "SHORT_ANSWER" | "short_answer";
   question: string;
   options?: string[];
   correctAnswer?: string;
@@ -152,14 +152,9 @@ export default function RoomPage() {
       if (response.ok) {
         const result = await response.json();
 
-        // 개인 답안 저장
-        const currentQuestion = room.questions[userCurrentQuestion];
-        const isCorrect =
-          currentQuestion.type === "MULTIPLE_CHOICE"
-            ? answer === currentQuestion.correctAnswer
-            : true; // 단답식은 일단 정답으로 처리
-
-        const points = isCorrect ? currentQuestion.points : 0;
+        // 서버 응답에서 정답 여부와 점수를 받아옴
+        const isCorrect = result.isCorrect || false;
+        const points = result.points || 0;
 
         setUserAnswers((prev) => ({
           ...prev,
@@ -183,14 +178,27 @@ export default function RoomPage() {
     setTextAnswer("");
   };
 
+  // 연결 오류 상태 관리
+  const [connectionError, setConnectionError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
+
   // 방 정보 폴링
   const pollRoomInfo = async () => {
     try {
       const response = await fetch(
-        `http://localhost:8080/api/game/room/${roomId}`
+        `http://localhost:8080/api/game/room/${roomId}`,
+        {
+          signal: AbortSignal.timeout(5000), // 5초 타임아웃
+        }
       );
       if (response.ok) {
         const roomData = await response.json();
+        
+        // 연결 성공 시 오류 상태 초기화
+        setConnectionError(false);
+        setRetryCount(0);
+        
         console.log("방 정보 수신:", roomData);
         console.log("문제 개수:", roomData.questions?.length || 0);
         if (roomData.questions && roomData.questions.length > 0) {
@@ -256,6 +264,17 @@ export default function RoomPage() {
       }
     } catch (error) {
       console.error("Failed to poll room info:", error);
+      setConnectionError(true);
+      setRetryCount(prev => prev + 1);
+      
+      // 최대 재시도 횟수 초과 시 폴링 중단
+      if (retryCount >= maxRetries) {
+        console.warn("최대 재시도 횟수 초과. 폴링을 중단합니다.");
+        if (pollIntervalRef) {
+          clearInterval(pollIntervalRef);
+          setPollIntervalRef(null);
+        }
+      }
     }
   };
 
@@ -270,8 +289,8 @@ export default function RoomPage() {
     // 초기 방 정보 로드
     pollRoomInfo();
 
-    // 주기적으로 방 정보 업데이트 (1초마다로 변경)
-    const newPollInterval = setInterval(pollRoomInfo, 1000);
+    // 주기적으로 방 정보 업데이트 (3초마다)
+    const newPollInterval = setInterval(pollRoomInfo, 3000);
     setPollIntervalRef(newPollInterval);
 
     return () => {
@@ -344,6 +363,7 @@ export default function RoomPage() {
           userId,
           userName: userName.trim(),
         }),
+        signal: AbortSignal.timeout(10000), // 10초 타임아웃
       });
 
       if (response.ok) {
@@ -382,6 +402,12 @@ export default function RoomPage() {
       }
     } catch (error) {
       console.error("Failed to join room:", error);
+      // 연결 오류 시 사용자에게 알림
+      if (error instanceof Error && error.name === 'AbortError') {
+        alert('서버 연결 시간이 초과되었습니다. 백엔드 서버가 실행 중인지 확인해주세요.');
+      } else {
+        alert('방 참여에 실패했습니다. 서버 연결을 확인해주세요.');
+      }
     } finally {
       setIsJoining(false);
     }
@@ -417,14 +443,9 @@ export default function RoomPage() {
       if (response.ok) {
         const result = await response.json();
 
-        // 개인 답안 저장
-        const currentQuestion = room.questions[userCurrentQuestion];
-        const isCorrect =
-          currentQuestion.type === "MULTIPLE_CHOICE"
-            ? answer === currentQuestion.correctAnswer
-            : true; // 단답식은 일단 정답으로 처리
-
-        const points = isCorrect ? currentQuestion.points : 0;
+        // 서버 응답에서 정답 여부와 점수를 받아옴
+        const isCorrect = result.isCorrect || false;
+        const points = result.points || 0;
 
         setUserAnswers((prev) => ({
           ...prev,
@@ -621,20 +642,36 @@ export default function RoomPage() {
     try {
       const ws = new WebSocket("ws://localhost:8080/ws");
 
+      // 연결 타임아웃 설정
+      const connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          console.warn("WebSocket 연결 타임아웃");
+          ws.close();
+        }
+      }, 5000);
+
       ws.onopen = () => {
         console.log("WebSocket 연결됨");
+        clearTimeout(connectionTimeout);
         setIsConnected(true);
         setSocket(ws);
       };
 
-      ws.onclose = () => {
-        console.log("WebSocket 연결 해제됨");
+      ws.onclose = (event) => {
+        console.log("WebSocket 연결 해제됨:", event.code, event.reason);
+        clearTimeout(connectionTimeout);
         setIsConnected(false);
         setHasJoinedWebSocket(false); // join 상태 초기화
+        
+        // 비정상 종료 시에만 로그 출력 (정상 종료는 1000)
+        if (event.code !== 1000) {
+          console.warn("WebSocket 비정상 종료:", event.code);
+        }
       };
 
       ws.onerror = (error) => {
-        console.error("WebSocket 오류:", error);
+        console.error("WebSocket 연결 오류:", error);
+        clearTimeout(connectionTimeout);
         setIsConnected(false);
         setHasJoinedWebSocket(false); // join 상태 초기화
       };
@@ -761,12 +798,43 @@ export default function RoomPage() {
     return Math.max(0, (timeLeft / totalTime) * 100);
   };
 
+  if (!room && connectionError && retryCount >= maxRetries) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            <strong className="font-bold">연결 오류!</strong>
+            <span className="block sm:inline"> 백엔드 서버에 연결할 수 없습니다.</span>
+          </div>
+          <p className="text-gray-600 mb-4">
+            백엔드 서버가 실행되고 있는지 확인해주세요.
+          </p>
+          <Button 
+            onClick={() => {
+              setConnectionError(false);
+              setRetryCount(0);
+              pollRoomInfo();
+            }}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            다시 시도
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!room) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">룸 정보를 불러오는 중...</p>
+          {connectionError && (
+            <p className="text-yellow-600 mt-2">
+              연결 중... ({retryCount}/{maxRetries})
+            </p>
+          )}
         </div>
       </div>
     );
@@ -1167,7 +1235,7 @@ export default function RoomPage() {
                 </CardTitle>
                 <CardDescription>
                   유형:{" "}
-                  {currentQuestion.type === "MULTIPLE_CHOICE"
+                  {(currentQuestion.type === "MULTIPLE_CHOICE" || currentQuestion.type === "multiple_choice")
                     ? "객관식"
                     : "단답식"}
                   {hasSubmitted && (
@@ -1180,7 +1248,7 @@ export default function RoomPage() {
                   {currentQuestion.question}
                 </div>
 
-                {currentQuestion.type === "MULTIPLE_CHOICE" &&
+                {(currentQuestion.type === "MULTIPLE_CHOICE" || currentQuestion.type === "multiple_choice") &&
                   currentQuestion.options && (
                     <div className="space-y-2">
                       {currentQuestion.options.map((option, index) => (
@@ -1206,7 +1274,7 @@ export default function RoomPage() {
                     </div>
                   )}
 
-                {currentQuestion.type === "short-answer" && (
+                {(currentQuestion.type === "short_answer" || currentQuestion.type === "SHORT_ANSWER") && (
                   <Input
                     placeholder="답을 입력하세요"
                     value={textAnswer}
@@ -1223,9 +1291,9 @@ export default function RoomPage() {
                   className="w-full"
                   disabled={
                     hasSubmitted ||
-                    (currentQuestion.type === "MULTIPLE_CHOICE" &&
+                    ((currentQuestion.type === "MULTIPLE_CHOICE" || currentQuestion.type === "multiple_choice") &&
                       !selectedAnswer) ||
-                    (currentQuestion.type === "short-answer" &&
+                    ((currentQuestion.type === "short_answer" || currentQuestion.type === "SHORT_ANSWER") &&
                       !textAnswer.trim())
                   }
                 >
