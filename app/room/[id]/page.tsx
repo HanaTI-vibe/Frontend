@@ -43,6 +43,7 @@ interface Room {
   scores: Record<string, number>;
   inviteCode?: string;
   timeLimit: number;
+  hostUserId?: string;
 }
 
 interface Participant {
@@ -69,6 +70,8 @@ export default function RoomPage() {
   const [currentUser, setCurrentUser] = useState<string>("");
   const [userName, setUserName] = useState("");
   const [hasJoined, setHasJoined] = useState(false);
+  const [isHost, setIsHost] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState("");
   const [textAnswer, setTextAnswer] = useState("");
   const [timeLeft, setTimeLeft] = useState(30);
@@ -216,26 +219,12 @@ export default function RoomPage() {
     }
   }, [shouldAutoJoin, room, userName, hasJoined, isJoining]);
 
-  // 방에 입장한 후 문제 표시를 위한 useEffect 추가
+  // 게임 상태 동기화
   useEffect(() => {
-    if (
-      hasJoined &&
-      room &&
-      room.questions &&
-      room.questions.length > 0 &&
-      !timerRef
-    ) {
-      setShowResults(false);
-      setHasSubmitted(false);
-      setSelectedAnswer("");
-      setTextAnswer("");
-
-      // 타이머가 아직 시작되지 않았을 때만 시작
-      if (room.timeLimit) {
-        startTimer(room.timeLimit);
-      }
+    if (room) {
+      setGameStarted(room.status === "active");
     }
-  }, [hasJoined, room, timerRef]);
+  }, [room]);
 
   // WebSocket 연결 후 join 메시지 전송 (한 번만)
   useEffect(() => {
@@ -282,9 +271,12 @@ export default function RoomPage() {
       });
 
       if (response.ok) {
+        const joinData = await response.json();
         setCurrentUser(userId);
         setHasJoined(true);
         setHasJoinedWebSocket(false);
+        setIsHost(joinData.isHost || false);
+        setGameStarted(joinData.roomStatus === "ACTIVE");
         setShowResults(false);
         setHasSubmitted(false);
         setSelectedAnswer("");
@@ -302,8 +294,8 @@ export default function RoomPage() {
           connectWebSocket();
         }
 
-        // 방 입장 시 타이머 시작 (타이머가 없을 때만)
-        if (!timerRef) {
+        // 게임이 이미 시작된 경우에만 타이머 시작
+        if (joinData.roomStatus === "ACTIVE" && !timerRef) {
           startTimer(room.timeLimit || 30);
         }
       }
@@ -417,6 +409,51 @@ export default function RoomPage() {
   const copyInviteCode = () => {
     if (room?.inviteCode) {
       navigator.clipboard.writeText(room.inviteCode);
+    }
+  };
+
+  const startGame = async () => {
+    if (!room || !isHost) return;
+
+    try {
+      const response = await fetch(`http://localhost:8080/api/game/start-game`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId: room.id,
+          userId: currentUser,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === "started") {
+          setGameStarted(true);
+          setRoom((prev) => prev ? {
+            ...prev,
+            status: "active",
+            currentQuestion: 0
+          } : null);
+          
+          // 타이머 시작
+          startTimer(data.timeLimit || 30);
+          
+          // 시스템 메시지 추가
+          const systemMessage: ChatMessage = {
+            id: `system_${Date.now()}`,
+            userId: "system",
+            userName: "시스템",
+            message: "게임이 시작되었습니다! 첫 번째 문제를 풀어보세요.",
+            timestamp: Date.now(),
+            type: "system",
+          };
+          setChatMessages((prev) => [...prev, systemMessage]);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to start game:", error);
     }
   };
 
@@ -669,7 +706,247 @@ export default function RoomPage() {
     );
   }
 
-  const currentQuestion = room.questions[userCurrentQuestion];
+  // 게임이 시작되지 않은 경우 대기 화면 표시
+  if (hasJoined && !gameStarted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <div className="max-w-4xl mx-auto">
+          {/* 헤더 */}
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-bold text-gray-800">
+                퀴즈 대기실 - {room.inviteCode}
+              </h1>
+              <div className="flex items-center gap-4">
+                <Badge variant="outline" className="flex items-center gap-1">
+                  <Users className="w-4 h-4" />
+                  {participants.length}명 참여
+                </Badge>
+                {isHost && (
+                  <Badge variant="secondary">방장</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* 참가자 목록 */}
+            <div className="lg:col-span-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    참가자 목록
+                  </CardTitle>
+                  <CardDescription>
+                    현재 {participants.length}명이 참여 중입니다
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {participants.map((participant) => (
+                      <div
+                        key={participant.id}
+                        className={`flex items-center justify-between p-3 rounded-lg ${
+                          participant.id === currentUser
+                            ? "bg-blue-100 border border-blue-300"
+                            : "bg-gray-50"
+                        }`}
+                      >
+                        <span className="font-medium">
+                          {participant.name}
+                          {participant.id === currentUser && " (나)"}
+                          {participant.id === room.hostUserId && " 👑"}
+                        </span>
+                        <Badge variant="outline">대기 중</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 게임 정보 및 시작 버튼 */}
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>게임 정보</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">문제 수:</span>
+                    <span className="font-medium">{room.questions.length}개</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">제한 시간:</span>
+                    <span className="font-medium">{room.timeLimit}초/문제</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">상태:</span>
+                    <Badge variant="outline">대기 중</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>초대 코드</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center">
+                  <div className="bg-gray-100 rounded-lg p-4 mb-3">
+                    <div className="text-2xl font-mono font-bold text-blue-600">
+                      {room.inviteCode}
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={copyInviteCode}>
+                    <Share2 className="w-4 h-4 mr-2" />
+                    코드 복사
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {isHost && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>게임 시작</CardTitle>
+                    <CardDescription>
+                      방장만 게임을 시작할 수 있습니다
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button 
+                      onClick={startGame} 
+                      className="w-full bg-green-600 hover:bg-green-700"
+                      size="lg"
+                    >
+                      게임 시작하기
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!isHost && (
+                <Card>
+                  <CardContent className="text-center py-6">
+                    <p className="text-gray-600">
+                      방장이 게임을 시작할 때까지 기다려주세요...
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+
+          {/* 채팅 영역 */}
+          {isChatVisible && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <MessageCircle className="w-5 h-5" />
+                    실시간 채팅
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleChat}
+                    className="h-6 w-6 p-0"
+                  >
+                    ×
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 flex flex-col p-0">
+                {/* 채팅 메시지 영역 */}
+                <ScrollArea className="flex-1 px-4 h-48">
+                  <div className="space-y-3 pb-4">
+                    {chatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`${
+                          msg.type === "system" ? "text-center" : ""
+                        }`}
+                      >
+                        {msg.type === "system" ? (
+                          <div className="text-xs text-gray-500 bg-gray-100 rounded-full px-3 py-1 inline-block">
+                            {msg.message}
+                          </div>
+                        ) : (
+                          <div
+                            className={`${
+                              msg.userId === currentUser
+                                ? "text-right"
+                                : "text-left"
+                            }`}
+                          >
+                            <div
+                              className={`inline-block max-w-[80%] p-2 rounded-lg ${
+                                msg.userId === currentUser
+                                  ? "bg-blue-500 text-white"
+                                  : "bg-gray-100 text-gray-900"
+                              }`}
+                            >
+                              {msg.userId !== currentUser && (
+                                <div className="text-xs font-medium mb-1 opacity-70">
+                                  {msg.userName}
+                                </div>
+                              )}
+                              <div className="text-sm">{msg.message}</div>
+                              <div className={`text-xs mt-1 opacity-70`}>
+                                {new Date(msg.timestamp).toLocaleTimeString(
+                                  "ko-KR",
+                                  {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+
+                {/* 채팅 입력 */}
+                <div className="p-4 border-t">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="메시지를 입력하세요..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          sendChatMessage();
+                        }
+                      }}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={sendChatMessage}
+                      disabled={!chatInput.trim()}
+                      size="sm"
+                      className="px-3"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter로 전송, Shift+Enter로 줄바꿈
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 게임이 시작되지 않았으면 첫 번째 문제로 설정 (에러 방지)
+  const currentQuestion = room.questions[userCurrentQuestion] || room.questions[0];
   const progress = ((userCurrentQuestion + 1) / room.questions.length) * 100;
 
   return (
