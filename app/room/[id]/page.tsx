@@ -160,8 +160,40 @@ export default function RoomPage() {
       const response = await fetch(`http://localhost:8080/api/socket/messages/${room.id}`)
       if (response.ok) {
         const messages = await response.json()
-        // 실제로는 새 메시지만 추가하는 로직이 필요
-        console.log("채팅 메시지 수신:", messages)
+        console.log("채팅 메시지 폴링 결과:", messages)
+        console.log("현재 채팅 메시지 수:", chatMessages.length)
+        
+        // 새 메시지만 추가 (중복 방지)
+        let newMessageCount = 0
+        messages.forEach((msg: any) => {
+          const messageId = `server_${msg.timestamp}_${msg.userId}`
+          const exists = chatMessages.some(existing => existing.id === messageId)
+          
+          if (!exists) {
+            console.log("새 메시지 추가:", msg)
+            const chatMessage: ChatMessage = {
+              id: messageId,
+              userId: msg.userId,
+              userName: msg.userName,
+              message: msg.message,
+              timestamp: msg.timestamp,
+              type: msg.type || 'message'
+            }
+            setChatMessages(prev => [...prev, chatMessage])
+            newMessageCount++
+            
+            // 채팅창이 숨겨져 있으면 읽지 않은 메시지 수 증가
+            if (!isChatVisible && msg.userId !== currentUser) {
+              setUnreadCount(prev => prev + 1)
+            }
+          }
+        })
+        
+        if (newMessageCount > 0) {
+          console.log(`${newMessageCount}개의 새 메시지가 추가되었습니다.`)
+        }
+      } else {
+        console.error("채팅 메시지 폴링 실패:", response.status)
       }
     } catch (error) {
       console.error("채팅 메시지 폴링 실패:", error)
@@ -182,8 +214,8 @@ export default function RoomPage() {
     const newPollInterval = setInterval(pollRoomInfo, 5000)
     setPollIntervalRef(newPollInterval)
 
-    // 채팅 메시지 폴링 (2초마다)
-    const chatPollInterval = setInterval(pollChatMessages, 2000)
+    // 채팅 메시지 폴링 (1초마다)
+    const chatPollIntervalRef = setInterval(pollChatMessages, 1000)
 
     return () => {
       if (timerRef) {
@@ -192,7 +224,7 @@ export default function RoomPage() {
       if (pollIntervalRef) {
         clearInterval(pollIntervalRef)
       }
-      clearInterval(chatPollInterval)
+      clearInterval(chatPollIntervalRef)
       // WebSocket 연결 해제
       disconnectWebSocket()
     }
@@ -286,7 +318,7 @@ export default function RoomPage() {
 
     // 로컬에 메시지 추가 (즉시 표시)
     const localMessage: ChatMessage = {
-      id: `local_${Date.now()}`,
+      id: `local_${Date.now()}_${currentUser}`,
       userId: currentUser,
       userName: userName,
       message: newMessage.trim(),
@@ -308,6 +340,12 @@ export default function RoomPage() {
         message: newMessage.trim(),
         timestamp: Date.now()
       }),
+    }).then(response => {
+      if (response.ok) {
+        console.log('채팅 메시지 전송 성공')
+      } else {
+        console.error('채팅 메시지 전송 실패:', response.status)
+      }
     }).catch(error => {
       console.error('채팅 메시지 전송 실패:', error)
     })
