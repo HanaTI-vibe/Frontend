@@ -123,7 +123,9 @@ export default function RoomPage() {
   const scrollToBottom = () => {
     if (chatScrollRef.current) {
       // ScrollArea 컴포넌트 내부의 실제 스크롤 요소를 찾아서 스크롤
-      const scrollElement = chatScrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      const scrollElement = chatScrollRef.current.querySelector(
+        "[data-radix-scroll-area-viewport]"
+      );
       if (scrollElement) {
         scrollElement.scrollTop = scrollElement.scrollHeight;
       } else {
@@ -162,20 +164,23 @@ export default function RoomPage() {
         : textAnswer;
 
     try {
-      const response = await fetch(`http://localhost:8080/api/game/submit-answer`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          roomId,
-          userId: currentUser,
-          questionId: room.questions[userCurrentQuestion].id,
-          answer: answer || "",
-          timestamp: Date.now(),
-          isAutoSubmit: true,
-        }),
-      });
+      const response = await fetch(
+        `http://localhost:8080/api/game/submit-answer`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            roomId,
+            userId: currentUser,
+            questionId: room.questions[userCurrentQuestion].id,
+            answer: answer || "",
+            timestamp: Date.now(),
+            isAutoSubmit: true,
+          }),
+        }
+      );
 
       if (response.ok) {
         const result = await response.json();
@@ -222,35 +227,44 @@ export default function RoomPage() {
       );
       if (response.ok) {
         const roomData = await response.json();
-        
+
         // 연결 성공 시 오류 상태 초기화
         setConnectionError(false);
         setRetryCount(0);
-        
+
         console.log("방 정보 수신:", roomData);
         console.log("문제 개수:", roomData.questions?.length || 0);
         if (roomData.questions && roomData.questions.length > 0) {
           console.log("첫 번째 문제:", roomData.questions[0]);
         }
         console.log(roomData);
-        
+
         // 현재 문제가 변경되었을 때 (방장이 다음 문제로 넘어갔을 때)
-        if (room && roomData.currentQuestion !== room.currentQuestion && gameStarted && hasJoined) {
-          console.log(`문제 변경 감지: ${room.currentQuestion} -> ${roomData.currentQuestion}`);
+        if (
+          room &&
+          roomData.currentQuestion !== room.currentQuestion &&
+          gameStarted &&
+          hasJoined
+        ) {
+          console.log(
+            `문제 변경 감지: ${room.currentQuestion} -> ${roomData.currentQuestion}`
+          );
           setUserCurrentQuestion(roomData.currentQuestion);
-          setIsLastQuestion(roomData.currentQuestion >= roomData.questions.length - 1);
+          setIsLastQuestion(
+            roomData.currentQuestion >= roomData.questions.length - 1
+          );
           setShowResults(false);
           setShowResultsLatch(false);
           setHasSubmitted(false);
           setSelectedAnswer("");
           setTextAnswer("");
-          
+
           // 타이머 재시작
           if (timerRef) {
             clearInterval(timerRef);
           }
           startTimer(roomData.timeLimit || 30);
-          
+
           // 시스템 메시지 추가
           const systemMessage: ChatMessage = {
             id: `system_${Date.now()}`,
@@ -262,25 +276,31 @@ export default function RoomPage() {
           };
           setChatMessages((prev) => [...prev, systemMessage]);
         }
-        
+
         // 퀴즈가 종료된 경우
-        if (room && roomData.status === "finished" && room.status !== "finished" && hasJoined) {
+        if (
+          room &&
+          roomData.status === "finished" &&
+          room.status !== "finished" &&
+          hasJoined
+        ) {
           setQuizFinished(true);
           if (timerRef) {
             clearInterval(timerRef);
           }
-          
+
           // 최종 순위 계산
           const ranking = roomData.participants
             .map((participant: Participant) => ({
               ...participant,
-              displayScore: participant.id === currentUser ? userScore : participant.score,
+              displayScore:
+                participant.id === currentUser ? userScore : participant.score,
             }))
             .sort((a: any, b: any) => b.displayScore - a.displayScore);
-          
+
           setFinalRanking(ranking);
           setShowFinalScoreModal(true);
-          
+
           // 시스템 메시지 추가
           const systemMessage: ChatMessage = {
             id: `system_${Date.now()}`,
@@ -292,7 +312,7 @@ export default function RoomPage() {
           };
           setChatMessages((prev) => [...prev, systemMessage]);
         }
-        
+
         setRoom(roomData);
         setParticipants(roomData.participants || []);
 
@@ -304,8 +324,8 @@ export default function RoomPage() {
     } catch (error) {
       console.error("Failed to poll room info:", error);
       setConnectionError(true);
-      setRetryCount(prev => prev + 1);
-      
+      setRetryCount((prev) => prev + 1);
+
       // 최대 재시도 횟수 초과 시 폴링 중단
       if (retryCount >= maxRetries) {
         console.warn("최대 재시도 횟수 초과. 폴링을 중단합니다.");
@@ -417,12 +437,12 @@ export default function RoomPage() {
         setHasJoinedWebSocket(false);
         setIsHost(joinData.isHost || false);
         setGameStarted(joinData.roomStatus === "ACTIVE");
-        
+
         // 게임이 시작되지 않은 경우에만 결과창 초기화
         if (joinData.roomStatus !== "ACTIVE") {
           setShowResults(false);
         }
-        
+
         setHasSubmitted(false);
         setSelectedAnswer("");
         setTextAnswer("");
@@ -447,10 +467,12 @@ export default function RoomPage() {
     } catch (error) {
       console.error("Failed to join room:", error);
       // 연결 오류 시 사용자에게 알림
-      if (error instanceof Error && error.name === 'AbortError') {
-        alert('서버 연결 시간이 초과되었습니다. 백엔드 서버가 실행 중인지 확인해주세요.');
+      if (error instanceof Error && error.name === "AbortError") {
+        alert(
+          "서버 연결 시간이 초과되었습니다. 백엔드 서버가 실행 중인지 확인해주세요."
+        );
       } else {
-        alert('방 참여에 실패했습니다. 서버 연결을 확인해주세요.');
+        alert("방 참여에 실패했습니다. 서버 연결을 확인해주세요.");
       }
     } finally {
       setIsJoining(false);
@@ -540,7 +562,7 @@ export default function RoomPage() {
     socket.send(JSON.stringify(message));
     console.log("채팅 메시지 전송:", message);
     setChatInput("");
-    
+
     // 메시지 전송 후 스크롤
     setTimeout(scrollToBottom, 100);
   };
@@ -566,7 +588,7 @@ export default function RoomPage() {
     try {
       // WebSocket 연결 해제
       disconnectWebSocket();
-      
+
       // 타이머 정리
       if (timerRef) {
         clearInterval(timerRef);
@@ -574,10 +596,10 @@ export default function RoomPage() {
       if (pollIntervalRef) {
         clearInterval(pollIntervalRef);
       }
-      
+
       // 상태 초기화
       setShowFinalScoreModal(false);
-      
+
       // 메인 페이지로 강제 이동
       window.location.replace("/");
     } catch (error) {
@@ -591,30 +613,37 @@ export default function RoomPage() {
     if (!room || !isHost) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/api/game/start-game`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          roomId: room.id,
-          userId: currentUser,
-        }),
-      });
+      const response = await fetch(
+        `http://localhost:8080/api/game/start-game`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            roomId: room.id,
+            userId: currentUser,
+          }),
+        }
+      );
 
       if (response.ok) {
         const data = await response.json();
         if (data.status === "started") {
           setGameStarted(true);
-          setRoom((prev) => prev ? {
-            ...prev,
-            status: "active",
-            currentQuestion: 0
-          } : null);
-          
+          setRoom((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: "active",
+                  currentQuestion: 0,
+                }
+              : null
+          );
+
           // 타이머 시작
           startTimer(data.timeLimit || 30);
-          
+
           // 시스템 메시지 추가
           const systemMessage: ChatMessage = {
             id: `system_${Date.now()}`,
@@ -660,16 +689,19 @@ export default function RoomPage() {
           if (timerRef) {
             clearInterval(timerRef);
           }
-          
+
           // 최종 순위 계산
           if (data.finalScores) {
             const ranking = data.finalScores
               .map((participant: Participant) => ({
                 ...participant,
-                displayScore: participant.id === currentUser ? userScore : participant.score,
+                displayScore:
+                  participant.id === currentUser
+                    ? userScore
+                    : participant.score,
               }))
               .sort((a: any, b: any) => b.displayScore - a.displayScore);
-            
+
             setFinalRanking(ranking);
             setShowFinalScoreModal(true);
           }
@@ -747,7 +779,7 @@ export default function RoomPage() {
         clearTimeout(connectionTimeout);
         setIsConnected(false);
         setHasJoinedWebSocket(false); // join 상태 초기화
-        
+
         // 비정상 종료 시에만 로그 출력 (정상 종료는 1000)
         if (event.code !== 1000) {
           console.warn("WebSocket 비정상 종료:", event.code);
@@ -801,16 +833,16 @@ export default function RoomPage() {
             setHasSubmitted(false);
             setSelectedAnswer("");
             setTextAnswer("");
-            
+
             // 타이머 재시작
             if (timerRef) {
               clearInterval(timerRef);
             }
             startTimer(data.timeLimit || 30);
-            
+
             // 즉시 방 정보 폴링으로 최신 정보 가져오기
             pollRoomInfo();
-            
+
             // 시스템 메시지 추가
             const systemMessage: ChatMessage = {
               id: `system_${Date.now()}`,
@@ -828,10 +860,10 @@ export default function RoomPage() {
             if (timerRef) {
               clearInterval(timerRef);
             }
-            
+
             // 최종 순위 계산을 위해 방 정보 폴링
             pollRoomInfo();
-            
+
             // 시스템 메시지 추가
             const systemMessage: ChatMessage = {
               id: `system_${Date.now()}`,
@@ -892,12 +924,15 @@ export default function RoomPage() {
         <div className="text-center max-w-md mx-auto p-6">
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             <strong className="font-bold">연결 오류!</strong>
-            <span className="block sm:inline"> 백엔드 서버에 연결할 수 없습니다.</span>
+            <span className="block sm:inline">
+              {" "}
+              백엔드 서버에 연결할 수 없습니다.
+            </span>
           </div>
           <p className="text-gray-600 mb-4">
             백엔드 서버가 실행되고 있는지 확인해주세요.
           </p>
-          <Button 
+          <Button
             onClick={() => {
               setConnectionError(false);
               setRetryCount(0);
@@ -985,14 +1020,15 @@ export default function RoomPage() {
           <div className="bg-white rounded-lg shadow-md p-4 mb-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <h1 className="text-xl font-bold text-gray-800">
-                  퀴즈 대기실
-                </h1>
+                <h1 className="text-xl font-bold text-gray-800">퀴즈 대기실</h1>
                 <Badge variant="outline" className="text-lg font-mono">
                   {room.inviteCode}
                 </Badge>
                 {isHost && (
-                  <Badge variant="secondary" className="flex items-center gap-1">
+                  <Badge
+                    variant="secondary"
+                    className="flex items-center gap-1"
+                  >
                     👑 방장
                   </Badge>
                 )}
@@ -1039,7 +1075,9 @@ export default function RoomPage() {
                             {participant.id === currentUser && " (나)"}
                             {participant.id === room.hostUserId && " 👑"}
                           </span>
-                          <Badge variant="outline" className="text-xs">대기 중</Badge>
+                          <Badge variant="outline" className="text-xs">
+                            대기 중
+                          </Badge>
                         </div>
                       ))}
                     </div>
@@ -1083,8 +1121,8 @@ export default function RoomPage() {
                       <p className="text-gray-600">
                         모든 참가자가 준비되었습니다. 게임을 시작하세요!
                       </p>
-                      <Button 
-                        onClick={startGame} 
+                      <Button
+                        onClick={startGame}
                         className="bg-green-600 hover:bg-green-700 text-lg px-8 py-3"
                         size="lg"
                       >
@@ -1099,8 +1137,14 @@ export default function RoomPage() {
                         </p>
                         <div className="flex justify-center">
                           <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1"></div>
-                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1" style={{animationDelay: '0.1s'}}></div>
-                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1" style={{animationDelay: '0.2s'}}></div>
+                          <div
+                            className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1"
+                            style={{ animationDelay: "0.1s" }}
+                          ></div>
+                          <div
+                            className="w-2 h-2 bg-blue-600 rounded-full animate-bounce mx-1"
+                            style={{ animationDelay: "0.2s" }}
+                          ></div>
                         </div>
                       </div>
                     </div>
@@ -1207,9 +1251,7 @@ export default function RoomPage() {
                         <Send className="w-4 h-4" />
                       </Button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Enter로 전송
-                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Enter로 전송</p>
                   </div>
                 </CardContent>
               </Card>
@@ -1221,7 +1263,8 @@ export default function RoomPage() {
   }
 
   // 게임이 시작되지 않았으면 첫 번째 문제로 설정 (에러 방지)
-  const currentQuestion = room.questions[userCurrentQuestion] || room.questions[0];
+  const currentQuestion =
+    room.questions[userCurrentQuestion] || room.questions[0];
   const progress = ((userCurrentQuestion + 1) / room.questions.length) * 100;
 
   return (
@@ -1328,7 +1371,8 @@ export default function RoomPage() {
                 </CardTitle>
                 <CardDescription>
                   유형:{" "}
-                  {(currentQuestion.type === "MULTIPLE_CHOICE" || currentQuestion.type === "multiple_choice")
+                  {currentQuestion.type === "MULTIPLE_CHOICE" ||
+                  currentQuestion.type === "multiple_choice"
                     ? "객관식"
                     : "단답식"}
                   {hasSubmitted && (
@@ -1341,7 +1385,8 @@ export default function RoomPage() {
                   {currentQuestion.question}
                 </div>
 
-                {(currentQuestion.type === "MULTIPLE_CHOICE" || currentQuestion.type === "multiple_choice") &&
+                {(currentQuestion.type === "MULTIPLE_CHOICE" ||
+                  currentQuestion.type === "multiple_choice") &&
                   currentQuestion.options && (
                     <div className="space-y-2">
                       {currentQuestion.options.map((option, index) => (
@@ -1367,7 +1412,8 @@ export default function RoomPage() {
                     </div>
                   )}
 
-                {(currentQuestion.type === "short_answer" || currentQuestion.type === "SHORT_ANSWER") && (
+                {(currentQuestion.type === "short_answer" ||
+                  currentQuestion.type === "SHORT_ANSWER") && (
                   <Input
                     placeholder="답을 입력하세요"
                     value={textAnswer}
@@ -1384,9 +1430,11 @@ export default function RoomPage() {
                   className="w-full"
                   disabled={
                     hasSubmitted ||
-                    ((currentQuestion.type === "MULTIPLE_CHOICE" || currentQuestion.type === "multiple_choice") &&
+                    ((currentQuestion.type === "MULTIPLE_CHOICE" ||
+                      currentQuestion.type === "multiple_choice") &&
                       !selectedAnswer) ||
-                    ((currentQuestion.type === "short_answer" || currentQuestion.type === "SHORT_ANSWER") &&
+                    ((currentQuestion.type === "short_answer" ||
+                      currentQuestion.type === "SHORT_ANSWER") &&
                       !textAnswer.trim())
                   }
                 >
@@ -1406,8 +1454,16 @@ export default function RoomPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span>답안 결과</span>
-                    <Badge variant={userAnswers[userCurrentQuestion]?.isCorrect ? "default" : "destructive"}>
-                      {userAnswers[userCurrentQuestion]?.isCorrect ? "정답" : "오답"}
+                    <Badge
+                      variant={
+                        userAnswers[userCurrentQuestion]?.isCorrect
+                          ? "default"
+                          : "destructive"
+                      }
+                    >
+                      {userAnswers[userCurrentQuestion]?.isCorrect
+                        ? "정답"
+                        : "오답"}
                     </Badge>
                   </CardTitle>
                 </CardHeader>
@@ -1641,57 +1697,54 @@ export default function RoomPage() {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col p-0">
                   {/* 채팅 메시지 영역 */}
-                  <div className="flex-1 overflow-hidden">
-                    <ScrollArea 
-                      ref={chatScrollRef}
-                      className="h-full px-4"
-                    >
+                  <div className="flex-1 overflow-hidden max-h-[350px]">
+                    <ScrollArea ref={chatScrollRef} className="h-full px-4">
                       <div className="space-y-3 pb-4 min-h-full">
                         {chatMessages.map((msg) => (
-                        <div
-                          key={msg.id}
-                          className={`${
-                            msg.type === "system" ? "text-center" : ""
-                          }`}
-                        >
-                          {msg.type === "system" ? (
-                            <div className="text-xs text-gray-500 bg-gray-100 rounded-full px-3 py-1 inline-block">
-                              {msg.message}
-                            </div>
-                          ) : (
-                            <div
-                              className={`${
-                                msg.userId === currentUser
-                                  ? "text-right"
-                                  : "text-left"
-                              }`}
-                            >
+                          <div
+                            key={msg.id}
+                            className={`${
+                              msg.type === "system" ? "text-center" : ""
+                            }`}
+                          >
+                            {msg.type === "system" ? (
+                              <div className="text-xs text-gray-500 bg-gray-100 rounded-full px-3 py-1 inline-block">
+                                {msg.message}
+                              </div>
+                            ) : (
                               <div
-                                className={`inline-block max-w-[80%] p-2 rounded-lg ${
+                                className={`${
                                   msg.userId === currentUser
-                                    ? "bg-blue-500 text-white"
-                                    : "bg-gray-100 text-gray-900"
+                                    ? "text-right"
+                                    : "text-left"
                                 }`}
                               >
-                                {msg.userId !== currentUser && (
-                                  <div className="text-xs font-medium mb-1 opacity-70">
-                                    {msg.userName}
-                                  </div>
-                                )}
-                                <div className="text-sm">{msg.message}</div>
-                                <div className={`text-xs mt-1 opacity-70`}>
-                                  {new Date(msg.timestamp).toLocaleTimeString(
-                                    "ko-KR",
-                                    {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    }
+                                <div
+                                  className={`inline-block max-w-[80%] p-2 rounded-lg ${
+                                    msg.userId === currentUser
+                                      ? "bg-blue-500 text-white"
+                                      : "bg-gray-100 text-gray-900"
+                                  }`}
+                                >
+                                  {msg.userId !== currentUser && (
+                                    <div className="text-xs font-medium mb-1 opacity-70">
+                                      {msg.userName}
+                                    </div>
                                   )}
+                                  <div className="text-sm">{msg.message}</div>
+                                  <div className={`text-xs mt-1 opacity-70`}>
+                                    {new Date(msg.timestamp).toLocaleTimeString(
+                                      "ko-KR",
+                                      {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      }
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
-                        </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </ScrollArea>
@@ -1746,28 +1799,35 @@ export default function RoomPage() {
               모든 문제를 완료했습니다. 최종 결과를 확인해보세요!
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-6">
             {/* 내 점수 하이라이트 */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200">
               <div className="text-center">
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">내 최종 점수</h3>
-                <div className="text-4xl font-bold text-blue-600 mb-2">{userScore}점</div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                  내 최종 점수
+                </h3>
+                <div className="text-4xl font-bold text-blue-600 mb-2">
+                  {userScore}점
+                </div>
                 <div className="text-sm text-gray-600">
-                  총 {room?.questions?.length || 0}문제 중 {Object.keys(userAnswers).length}문제 완료
+                  총 {room?.questions?.length || 0}문제 중{" "}
+                  {Object.keys(userAnswers).length}문제 완료
                 </div>
               </div>
             </div>
 
             {/* 전체 순위 */}
             <div>
-              <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">🏆 최종 순위</h3>
+              <h3 className="text-lg font-semibold text-gray-700 mb-4 text-center">
+                🏆 최종 순위
+              </h3>
               <div className="space-y-3">
                 {finalRanking.map((participant, index) => {
                   const isCurrentUser = participant.id === currentUser;
                   const isWinner = index === 0;
                   const isMedal = index < 3;
-                  
+
                   return (
                     <div
                       key={participant.id}
@@ -1782,14 +1842,22 @@ export default function RoomPage() {
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold ${
-                          isWinner
-                            ? "bg-yellow-500 text-white"
-                            : isMedal
-                            ? "bg-gray-400 text-white"
-                            : "bg-gray-200 text-gray-600"
-                        }`}>
-                          {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index + 1}
+                        <div
+                          className={`flex items-center justify-center w-8 h-8 rounded-full font-bold ${
+                            isWinner
+                              ? "bg-yellow-500 text-white"
+                              : isMedal
+                              ? "bg-gray-400 text-white"
+                              : "bg-gray-200 text-gray-600"
+                          }`}
+                        >
+                          {index === 0
+                            ? "🥇"
+                            : index === 1
+                            ? "🥈"
+                            : index === 2
+                            ? "🥉"
+                            : index + 1}
                         </div>
                         <div>
                           <div className="font-semibold text-gray-800">
@@ -1808,9 +1876,11 @@ export default function RoomPage() {
                           {participant.displayScore}점
                         </span>
                         {isMedal && (
-                          <Medal className={`w-5 h-5 ${
-                            isWinner ? "text-yellow-500" : "text-gray-400"
-                          }`} />
+                          <Medal
+                            className={`w-5 h-5 ${
+                              isWinner ? "text-yellow-500" : "text-gray-400"
+                            }`}
+                          />
                         )}
                       </div>
                     </div>
@@ -1821,23 +1891,40 @@ export default function RoomPage() {
 
             {/* 통계 정보 */}
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-700 mb-3 text-center">📊 내 상세 결과</h4>
+              <h4 className="font-semibold text-gray-700 mb-3 text-center">
+                📊 내 상세 결과
+              </h4>
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <div className="text-2xl font-bold text-green-600">
-                    {Object.values(userAnswers).filter(answer => answer.isCorrect).length}
+                    {
+                      Object.values(userAnswers).filter(
+                        (answer) => answer.isCorrect
+                      ).length
+                    }
                   </div>
                   <div className="text-sm text-gray-600">정답</div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-red-600">
-                    {Object.values(userAnswers).filter(answer => !answer.isCorrect).length}
+                    {
+                      Object.values(userAnswers).filter(
+                        (answer) => !answer.isCorrect
+                      ).length
+                    }
                   </div>
                   <div className="text-sm text-gray-600">오답</div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-blue-600">
-                    {Math.round((Object.values(userAnswers).filter(answer => answer.isCorrect).length / Object.keys(userAnswers).length) * 100) || 0}%
+                    {Math.round(
+                      (Object.values(userAnswers).filter(
+                        (answer) => answer.isCorrect
+                      ).length /
+                        Object.keys(userAnswers).length) *
+                        100
+                    ) || 0}
+                    %
                   </div>
                   <div className="text-sm text-gray-600">정답률</div>
                 </div>
