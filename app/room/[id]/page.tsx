@@ -993,12 +993,7 @@ export default function RoomPage() {
                   : "입장 중..."
               ) : "룸 참여하기"}
             </Button>
-            <div className="text-center">
-              <Button variant="outline" size="sm" onClick={copyRoomLink}>
-                <Share2 className="w-4 h-4 mr-2" />
-                링크 복사
-              </Button>
-            </div>
+            <div className="text-center"></div>
           </CardContent>
         </Card>
       </div>
@@ -1168,7 +1163,7 @@ export default function RoomPage() {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col p-0">
                   {/* 채팅 메시지 영역 */}
-                  <ScrollArea className="flex-1 px-4">
+                  <ScrollArea className="flex-1 px-4 max-h-[350px]">
                     <div className="space-y-2 pb-4">
                       {chatMessages.map((msg) => (
                         <div
