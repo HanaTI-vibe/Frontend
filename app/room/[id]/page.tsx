@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
   Card,
@@ -71,6 +71,137 @@ interface ChatMessage {
   timestamp: number;
   type: "message" | "system";
 }
+
+// =================================================================
+// 최적화를 위한 자식 컴포넌트들
+// =================================================================
+
+interface QuestionDisplayProps {
+  question: Question;
+  questionNumber: number;
+  selectedAnswer: string;
+  onSelectAnswer: (answer: string) => void;
+  textAnswer: string;
+  onTextAnswerChange: (answer: string) => void;
+  hasSubmitted: boolean;
+  onSubmit: () => void;
+}
+
+const QuestionDisplay = React.memo(
+  ({
+    question,
+    questionNumber,
+    selectedAnswer,
+    onSelectAnswer,
+    textAnswer,
+    onTextAnswerChange,
+    hasSubmitted,
+    onSubmit,
+  }: QuestionDisplayProps) => {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>문제 {questionNumber}</CardTitle>
+          <CardDescription>
+            {question.type.toLowerCase().includes("multiple_choice") ? "객관식" : "단답식"} / {question.points}점
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-lg mb-4">{question.question}</p>
+          {(question.type === "MULTIPLE_CHOICE" ||
+            question.type === "multiple_choice") &&
+            question.options && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {question.options?.map((option, index) => (
+                  <Button
+                    key={index}
+                    variant={selectedAnswer === String(index) ? "default" : "outline"}
+                    onClick={() => onSelectAnswer(String(index))}
+                    disabled={hasSubmitted}
+                    className="text-left justify-start p-4 h-auto whitespace-normal"
+                  >
+                    <span className="font-bold mr-2">{String.fromCharCode(65 + index)}.</span>
+                    {option}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+          {(question.type === "short_answer" ||
+            question.type === "SHORT_ANSWER") && (
+            <Input
+              placeholder="답을 입력하세요"
+              value={textAnswer}
+              onChange={(e) => onTextAnswerChange(e.target.value)}
+              disabled={hasSubmitted}
+              onKeyPress={(e) => e.key === "Enter" && !hasSubmitted && onSubmit()}
+            />
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+);
+QuestionDisplay.displayName = "QuestionDisplay";
+
+const AnswerResult = React.memo(({
+  userAnswer,
+  question,
+}: {
+  userAnswer: { answer: string; isCorrect: boolean; points: number } | undefined;
+  question: Question | undefined;
+}) => {
+  if (!userAnswer || !question) return null;
+
+  const myAnswerIndex = userAnswer.answer !== undefined ? parseInt(userAnswer.answer) : -1;
+  const correctAnswerIndex = parseInt(question.correctAnswer ?? "-1");
+
+  const myAnswerText = myAnswerIndex >= 0 && question.options?.[myAnswerIndex]
+    ? question.options[myAnswerIndex]
+    : myAnswerIndex === -1 ? "선택 안함" : "오류";
+
+  const correctAnswerText = correctAnswerIndex >= 0 && question.options?.[correctAnswerIndex]
+    ? question.options[correctAnswerIndex]
+    : "정답 정보 없음";
+
+  return (
+    <Card className="mt-4">
+      <CardContent className="pt-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold">답안 결과</h3>
+          <Badge variant={userAnswer.isCorrect ? "default" : "destructive"}>
+            {userAnswer.isCorrect ? "정답" : "오답"}
+          </Badge>
+        </div>
+        <div>
+          <Label>내 답안:</Label>
+          <div className="mt-1 p-3 bg-gray-100 rounded-lg">
+            {question.type.toLowerCase().includes("multiple_choice")
+              ? `${String.fromCharCode(65 + myAnswerIndex)}. ${myAnswerText}`
+              : userAnswer.answer || "입력 안함"}
+          </div>
+        </div>
+        <div className="mt-4">
+          <Label className="text-green-600">정답:</Label>
+          <div className="mt-1 p-3 bg-green-50 text-green-800 border border-green-200 rounded-lg">
+            {question.type.toLowerCase().includes("multiple_choice")
+              ? `${String.fromCharCode(65 + correctAnswerIndex)}. ${correctAnswerText}`
+              : question.correctAnswer}
+          </div>
+        </div>
+        {question.explanation && (
+          <div className="mt-4">
+            <Label className="text-blue-600">해설:</Label>
+            <div className="mt-1 p-3 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg whitespace-pre-wrap">
+              {question.explanation}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+});
+AnswerResult.displayName = "AnswerResult";
 
 export default function RoomPage() {
   const params = useParams();
@@ -481,7 +612,7 @@ export default function RoomPage() {
     }
   };
 
-  const submitAnswer = async () => {
+  const submitAnswer = useCallback(async () => {
     if (!currentUser || !room || hasSubmitted) return;
 
     const answer =
@@ -510,25 +641,17 @@ export default function RoomPage() {
 
       if (response.ok) {
         const result = await response.json();
-
-        // 서버 응답에서 정답 여부와 점수를 받아옴
         const isCorrect = result.isCorrect || false;
         const points = result.points || 0;
 
         setUserAnswers((prev) => ({
           ...prev,
-          [userCurrentQuestion]: {
-            answer,
-            isCorrect,
-            points,
-          },
+          [userCurrentQuestion]: { answer, isCorrect, points },
         }));
-
         setUserScore((prev) => prev + points);
         setShowResults(true);
         setShowResultsLatch(true);
 
-        // 타이머 정지
         if (timerRef) {
           clearInterval(timerRef);
         }
@@ -540,7 +663,7 @@ export default function RoomPage() {
     setHasSubmitted(true);
     setSelectedAnswer("");
     setTextAnswer("");
-  };
+  }, [currentUser, room, hasSubmitted, userCurrentQuestion, selectedAnswer, textAnswer, roomId, timerRef]);
 
   const sendChatMessage = () => {
     if (
@@ -611,7 +734,7 @@ export default function RoomPage() {
     }
   };
 
-  const startGame = async () => {
+  const startGame = useCallback(async () => {
     if (!room || !isHost) return;
 
     try {
@@ -624,12 +747,11 @@ export default function RoomPage() {
           roomId: room.id,
           userId: currentUser,
         }),
-        signal: AbortSignal.timeout(30000), // 10초 -> 30초로 연장
+        signal: AbortSignal.timeout(30000),
       });
 
       if (response.ok) {
         const gameData = await response.json();
-        console.log("게임 시작 성공:", gameData);
         setGameStarted(true);
         setUserCurrentQuestion(gameData.currentQuestion);
         startTimer(gameData.timeLimit);
@@ -650,10 +772,9 @@ export default function RoomPage() {
       console.error("Failed to start game:", error);
       alert("게임을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
     }
-  };
+  }, [room, isHost, currentUser, startTimer]);
 
-  // 방장이 다음 문제로 넘어가기 (모든 참가자에게 적용)
-  const moveToNextQuestion = async () => {
+  const moveToNextQuestion = useCallback(async () => {
     if (!room || !isHost) return;
 
     try {
@@ -681,33 +802,18 @@ export default function RoomPage() {
             clearInterval(timerRef);
           }
 
-          // 최종 순위 계산
           if (data.finalScores) {
             const ranking = data.finalScores
-              .map((participant: Participant) => ({
-                ...participant,
-                displayScore:
-                  participant.id === currentUser
-                    ? userScore
-                    : participant.score,
+              .map((p: Participant) => ({
+                ...p,
+                displayScore: p.id === currentUser ? userScore : p.score,
               }))
               .sort((a: any, b: any) => b.displayScore - a.displayScore);
-
             setFinalRanking(ranking);
             setShowFinalScoreModal(true);
           }
         } else {
-          // 다음 문제 정보로 업데이트
-          setRoom((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  currentQuestion: data.currentQuestion,
-                }
-              : null
-          );
-
-          // 모든 사용자의 상태 초기화
+          setRoom((prev) => prev ? { ...prev, currentQuestion: data.currentQuestion } : null);
           setUserCurrentQuestion(data.currentQuestion);
           setIsLastQuestion(data.isLastQuestion);
           setShowResults(false);
@@ -715,14 +821,10 @@ export default function RoomPage() {
           setHasSubmitted(false);
           setSelectedAnswer("");
           setTextAnswer("");
-
-          // 타이머 재시작
           if (timerRef) {
             clearInterval(timerRef);
           }
           startTimer(room.timeLimit || 30);
-
-          // 시스템 메시지 추가
           const systemMessage: ChatMessage = {
             id: `system_${Date.now()}`,
             userId: "system",
@@ -737,7 +839,7 @@ export default function RoomPage() {
     } catch (error) {
       console.error("Failed to move to next question:", error);
     }
-  };
+  }, [room, isHost, currentUser, userScore, timerRef, startTimer]);
 
   // WebSocket 연결
   const connectWebSocket = () => {
@@ -1330,131 +1432,44 @@ export default function RoomPage() {
           <div
             className={`${isChatVisible ? "lg:col-span-2" : "lg:col-span-3"}`}
           >
-            <Card>
-              <CardHeader>
-                <CardTitle>문제 {userCurrentQuestion + 1}</CardTitle>
-                <CardDescription>
-                  {currentQuestion.type.toLowerCase().includes("multiple_choice") ? "객관식" : "단답식"} / {currentQuestion.points}점
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-lg mb-4">{currentQuestion.question}</p>
-                {(currentQuestion.type === "MULTIPLE_CHOICE" ||
+            <QuestionDisplay
+              question={currentQuestion}
+              questionNumber={userCurrentQuestion + 1}
+              selectedAnswer={selectedAnswer}
+              onSelectAnswer={setSelectedAnswer}
+              textAnswer={textAnswer}
+              onTextAnswerChange={setTextAnswer}
+              hasSubmitted={hasSubmitted}
+              onSubmit={submitAnswer}
+            />
+
+            <Button
+              onClick={submitAnswer}
+              className="w-full mt-4"
+              disabled={
+                hasSubmitted ||
+                ((currentQuestion.type === "MULTIPLE_CHOICE" ||
                   currentQuestion.type === "multiple_choice") &&
-                  currentQuestion.options && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {room.questions[userCurrentQuestion].options?.map(
-                        (option, index) => (
-                          <Button
-                            key={index}
-                            variant={
-                              selectedAnswer === String(index)
-                                ? "default"
-                                : "outline"
-                            }
-                            onClick={() => setSelectedAnswer(String(index))}
-                            disabled={hasSubmitted}
-                            className="text-left justify-start p-4 h-auto whitespace-normal"
-                          >
-                            <span className="font-bold mr-2">{String.fromCharCode(65 + index)}.</span>
-                            {option}
-                          </Button>
-                        )
-                      )}
-                    </div>
-                  )}
+                  !selectedAnswer) ||
+                ((currentQuestion.type === "short_answer" ||
+                  currentQuestion.type === "SHORT_ANSWER") &&
+                  !textAnswer.trim())
+              }
+            >
+              {hasSubmitted ? "제출완료" : "답안 제출"}
+            </Button>
 
-                {(currentQuestion.type === "short_answer" ||
-                  currentQuestion.type === "SHORT_ANSWER") && (
-                  <Input
-                    placeholder="답을 입력하세요"
-                    value={textAnswer}
-                    onChange={(e) => setTextAnswer(e.target.value)}
-                    disabled={hasSubmitted}
-                    onKeyPress={(e) =>
-                      e.key === "Enter" && !hasSubmitted && submitAnswer()
-                    }
-                  />
-                )}
-
-                <Button
-                  onClick={submitAnswer}
-                  className="w-full"
-                  disabled={
-                    hasSubmitted ||
-                    ((currentQuestion.type === "MULTIPLE_CHOICE" ||
-                      currentQuestion.type === "multiple_choice") &&
-                      !selectedAnswer) ||
-                    ((currentQuestion.type === "short_answer" ||
-                      currentQuestion.type === "SHORT_ANSWER") &&
-                      !textAnswer.trim())
-                  }
-                >
-                  {hasSubmitted ? "제출완료" : "답안 제출"}
-                </Button>
-
-                {timeLeft <= 10 && !hasSubmitted && (
-                  <div className="text-center text-red-600 font-medium animate-pulse">
-                    ⚠️ {timeLeft}초 후 자동 제출됩니다!
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {timeLeft <= 10 && !hasSubmitted && (
+              <div className="text-center text-red-600 font-medium animate-pulse mt-2">
+                ⚠️ {timeLeft}초 후 자동 제출됩니다!
+              </div>
+            )}
 
             {/* 답안 결과 표시 영역 */}
-            {userAnswers[userCurrentQuestion] && (() => {
-              const myAnswerIndex = userAnswers[userCurrentQuestion]?.answer !== undefined ? parseInt(userAnswers[userCurrentQuestion].answer) : -1;
-              const correctAnswerIndex = parseInt(currentQuestion.correctAnswer ?? "-1");
-
-              const myAnswerText = myAnswerIndex >= 0 && room.questions[userCurrentQuestion].options?.[myAnswerIndex]
-                ? room.questions[userCurrentQuestion].options[myAnswerIndex]
-                : myAnswerIndex === -1 ? "선택 안함" : "오류";
-
-              const correctAnswerText = correctAnswerIndex >= 0 && room.questions[userCurrentQuestion].options?.[correctAnswerIndex]
-                ? room.questions[userCurrentQuestion].options[correctAnswerIndex]
-                : "정답 정보 없음";
-
-              return (
-                <Card className="mt-4">
-                  <CardContent className="pt-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-bold">답안 결과</h3>
-                      <Badge variant={userAnswers[userCurrentQuestion]?.isCorrect ? "default" : "destructive"}>
-                        {userAnswers[userCurrentQuestion]?.isCorrect ? "정답" : "오답"}
-                      </Badge>
-                    </div>
-
-                    {/* 내 답안 */}
-                    <div>
-                      <Label>내 답안:</Label>
-                      <div className="mt-1 p-3 bg-gray-100 rounded-lg">
-                        {currentQuestion.type.toLowerCase().includes("multiple_choice")
-                          ? `${String.fromCharCode(65 + myAnswerIndex)}. ${myAnswerText}`
-                          : userAnswers[userCurrentQuestion]?.answer || "입력 안함"}
-                      </div>
-                    </div>
-
-                    {/* 정답 */}
-                    <div className="mt-4">
-                      <Label className="text-green-600">정답:</Label>
-                      <div className="mt-1 p-3 bg-green-50 text-green-800 border border-green-200 rounded-lg">
-                        {currentQuestion.type.toLowerCase().includes("multiple_choice")
-                          ? `${String.fromCharCode(65 + correctAnswerIndex)}. ${correctAnswerText}`
-                          : currentQuestion.correctAnswer}
-                      </div>
-                    </div>
-
-                    {/* 해설 */}
-                    <div className="mt-4">
-                      <Label className="text-blue-600">해설:</Label>
-                      <div className="mt-1 p-3 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg whitespace-pre-wrap">
-                        {currentQuestion.explanation}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })()}
+            <AnswerResult 
+              userAnswer={userAnswers[userCurrentQuestion]} 
+              question={currentQuestion}
+            />
 
             {/* 다음 문제 버튼 영역 */}
             {hasSubmitted && (
@@ -1589,7 +1604,7 @@ export default function RoomPage() {
               <Card className="h-[600px] flex flex-col">
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center justify-between">
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-2 text-lg">
                       <MessageCircle className="w-5 h-5" />
                       실시간 채팅
                     </span>
