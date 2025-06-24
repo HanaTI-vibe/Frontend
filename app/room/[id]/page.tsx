@@ -32,6 +32,7 @@ import {
   Medal,
   Star,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 interface Question {
   id: string;
@@ -1331,70 +1332,35 @@ export default function RoomPage() {
           >
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>문제 {userCurrentQuestion + 1}</span>
-                  <div className="flex items-center gap-2">
-                    <Badge>{currentQuestion.points}점</Badge>
-                    <div className="flex items-center gap-2 min-w-[120px]">
-                      <div className="flex-1">
-                        <div className="text-xs text-gray-600 mb-1">
-                          {timeLeft}초
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full transition-all duration-300 ${getProgressColor(
-                              timeLeft,
-                              room.timeLimit
-                            )}`}
-                            style={{
-                              width: `${getProgressValue(timeLeft, room.timeLimit)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardTitle>
+                <CardTitle>문제 {userCurrentQuestion + 1}</CardTitle>
                 <CardDescription>
-                  유형:{" "}
-                  {currentQuestion.type === "MULTIPLE_CHOICE" ||
-                  currentQuestion.type === "multiple_choice"
-                    ? "객관식"
-                    : "단답식"}
-                  {hasSubmitted && (
-                    <span className="ml-2 text-green-600">✓ 제출완료</span>
-                  )}
+                  {currentQuestion.type.toLowerCase().includes("multiple_choice") ? "객관식" : "단답식"} / {currentQuestion.points}점
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="text-lg font-medium">
-                  {currentQuestion.question}
-                </div>
-
+              <CardContent>
+                <p className="text-lg mb-4">{currentQuestion.question}</p>
                 {(currentQuestion.type === "MULTIPLE_CHOICE" ||
                   currentQuestion.type === "multiple_choice") &&
                   currentQuestion.options && (
-                    <div className="space-y-2">
-                      {currentQuestion.options.map((option, index) => (
-                        <div
-                          key={index}
-                          className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                            selectedAnswer === option
-                              ? "bg-blue-100 border-blue-500"
-                              : hasSubmitted
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:bg-gray-50"
-                          }`}
-                          onClick={() =>
-                            !hasSubmitted && setSelectedAnswer(option)
-                          }
-                        >
-                          <span className="font-medium mr-2">
-                            {String.fromCharCode(65 + index)}.
-                          </span>
-                          {option}
-                        </div>
-                      ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {room.questions[userCurrentQuestion].options?.map(
+                        (option, index) => (
+                          <Button
+                            key={index}
+                            variant={
+                              selectedAnswer === String(index)
+                                ? "default"
+                                : "outline"
+                            }
+                            onClick={() => setSelectedAnswer(String(index))}
+                            disabled={hasSubmitted}
+                            className="text-left justify-start p-4 h-auto whitespace-normal"
+                          >
+                            <span className="font-bold mr-2">{String.fromCharCode(65 + index)}.</span>
+                            {option}
+                          </Button>
+                        )
+                      )}
                     </div>
                   )}
 
@@ -1435,115 +1401,71 @@ export default function RoomPage() {
               </CardContent>
             </Card>
 
-            {showResultsLatch && (
-              <Card className="mt-4">
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>답안 결과</span>
-                    <Badge
-                      variant={
-                        userAnswers[userCurrentQuestion]?.isCorrect
-                          ? "default"
-                          : "destructive"
-                      }
-                    >
-                      {userAnswers[userCurrentQuestion]?.isCorrect
-                        ? "정답"
-                        : "오답"}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* 내 답안 */}
-                  <div>
-                    <h4 className="font-medium text-gray-700 mb-2">내 답안:</h4>
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      {userAnswers[userCurrentQuestion]?.answer || "답안 없음"}
-                    </div>
-                  </div>
+            {/* 답안 결과 표시 영역 */}
+            {userAnswers[userCurrentQuestion] && (() => {
+              const myAnswerIndex = userAnswers[userCurrentQuestion]?.answer !== undefined ? parseInt(userAnswers[userCurrentQuestion].answer) : -1;
+              const correctAnswerIndex = parseInt(currentQuestion.correctAnswer ?? "-1");
 
-                  {/* 정답 */}
-                  {currentQuestion.correctAnswer && (
+              const myAnswerText = myAnswerIndex >= 0 && room.questions[userCurrentQuestion].options?.[myAnswerIndex]
+                ? room.questions[userCurrentQuestion].options[myAnswerIndex]
+                : myAnswerIndex === -1 ? "선택 안함" : "오류";
+
+              const correctAnswerText = correctAnswerIndex >= 0 && room.questions[userCurrentQuestion].options?.[correctAnswerIndex]
+                ? room.questions[userCurrentQuestion].options[correctAnswerIndex]
+                : "정답 정보 없음";
+
+              return (
+                <Card className="mt-4">
+                  <CardContent className="pt-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-bold">답안 결과</h3>
+                      <Badge variant={userAnswers[userCurrentQuestion]?.isCorrect ? "default" : "destructive"}>
+                        {userAnswers[userCurrentQuestion]?.isCorrect ? "정답" : "오답"}
+                      </Badge>
+                    </div>
+
+                    {/* 내 답안 */}
                     <div>
-                      <h4 className="font-medium text-green-600 mb-2">정답:</h4>
-                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                        {currentQuestion.correctAnswer}
+                      <Label>내 답안:</Label>
+                      <div className="mt-1 p-3 bg-gray-100 rounded-lg">
+                        {currentQuestion.type.toLowerCase().includes("multiple_choice")
+                          ? `${String.fromCharCode(65 + myAnswerIndex)}. ${myAnswerText}`
+                          : userAnswers[userCurrentQuestion]?.answer || "입력 안함"}
                       </div>
                     </div>
-                  )}
 
-                  {/* 해설 */}
-                  {currentQuestion.explanation && (
-                    <div>
-                      <h4 className="font-medium text-gray-700 mb-2">해설:</h4>
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    {/* 정답 */}
+                    <div className="mt-4">
+                      <Label className="text-green-600">정답:</Label>
+                      <div className="mt-1 p-3 bg-green-50 text-green-800 border border-green-200 rounded-lg">
+                        {currentQuestion.type.toLowerCase().includes("multiple_choice")
+                          ? `${String.fromCharCode(65 + correctAnswerIndex)}. ${correctAnswerText}`
+                          : currentQuestion.correctAnswer}
+                      </div>
+                    </div>
+
+                    {/* 해설 */}
+                    <div className="mt-4">
+                      <Label className="text-blue-600">해설:</Label>
+                      <div className="mt-1 p-3 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg whitespace-pre-wrap">
                         {currentQuestion.explanation}
                       </div>
                     </div>
-                  )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
-                  {/* 점수 */}
-                  <div className="text-center">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-100 border border-yellow-300 rounded-lg">
-                      <span className="font-medium">획득 점수:</span>
-                      <span className="font-bold text-yellow-700">
-                        {userAnswers[userCurrentQuestion]?.points || 0}점
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* 다음 문제 버튼 */}
-            {showResultsLatch && (
+            {/* 다음 문제 버튼 영역 */}
+            {hasSubmitted && (
               <Card className="mt-4">
-                <CardContent className="pt-6">
-                  {quizFinished ? (
-                    <div className="text-center">
-                      <h3 className="text-xl font-bold text-green-600 mb-4">
-                        🎉 퀴즈 완료!
-                      </h3>
-                      <p className="text-gray-600 mb-4">
-                        모든 문제를 풀었습니다. 최종 결과를 확인해보세요!
-                      </p>
-                      <Button
-                        onClick={() => setShowFinalScoreModal(true)}
-                        className="w-full bg-blue-600 hover:bg-blue-700 mb-3"
-                        size="lg"
-                      >
-                        <Trophy className="w-4 h-4 mr-2" />
-                        최종 결과 보기
-                      </Button>
-                      <Button
-                        onClick={goToMain}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        메인으로 돌아가기
-                      </Button>
-                    </div>
+                <CardContent className="pt-6 text-center">
+                  {isHost ? (
+                    <Button onClick={moveToNextQuestion} size="lg">
+                      {isLastQuestion ? "최종 결과 보기" : "다음 문제로"}
+                    </Button>
                   ) : (
-                    <div className="text-center">
-                      {isHost ? (
-                        <Button
-                          onClick={moveToNextQuestion}
-                          className="w-full bg-green-600 hover:bg-green-700"
-                          size="lg"
-                        >
-                          {isLastQuestion ? "퀴즈 완료하기" : "다음 문제로"}
-                        </Button>
-                      ) : (
-                        <div className="w-full p-4 text-center text-gray-500 bg-gray-50 rounded-lg">
-                          방장이 다음 문제로 넘어가기를 기다리는 중...
-                        </div>
-                      )}
-                      {isLastQuestion && (
-                        <p className="text-sm text-gray-500 mt-2">
-                          마지막 문제입니다
-                        </p>
-                      )}
-                    </div>
+                    <p>방장이 다음 문제로 넘어가기를 기다리는 중...</p>
                   )}
                 </CardContent>
               </Card>
