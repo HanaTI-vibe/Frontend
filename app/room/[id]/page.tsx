@@ -115,6 +115,10 @@ export default function RoomPage() {
   const [hasJoinedWebSocket, setHasJoinedWebSocket] = useState(false);
   const [shouldAutoJoin, setShouldAutoJoin] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [joinRetryCount, setJoinRetryCount] = useState(0);
+  const [maxJoinRetries] = useState(5);
+  // Stable user ID for the session, to prevent creating new users on retry
+  const [userId] = useState(() => `user_${Date.now()}`);
 
   // 채팅 스크롤 관리
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -220,10 +224,7 @@ export default function RoomPage() {
   const pollRoomInfo = async () => {
     try {
       const response = await fetch(
-        `http://localhost:8080/api/game/room/${roomId}`,
-        {
-          signal: AbortSignal.timeout(5000), // 5초 타임아웃
-        }
+        `http://localhost:8080/api/game/room/${roomId}`
       );
       if (response.ok) {
         const roomData = await response.json();
@@ -298,19 +299,19 @@ export default function RoomPage() {
             }))
             .sort((a: any, b: any) => b.displayScore - a.displayScore);
 
-          setFinalRanking(ranking);
-          setShowFinalScoreModal(true);
+            setFinalRanking(ranking);
+            setShowFinalScoreModal(true);
 
-          // 시스템 메시지 추가
-          const systemMessage: ChatMessage = {
-            id: `system_${Date.now()}`,
-            userId: "system",
-            userName: "시스템",
-            message: "퀴즈가 종료되었습니다!",
-            timestamp: Date.now(),
-            type: "system",
-          };
-          setChatMessages((prev) => [...prev, systemMessage]);
+            // 시스템 메시지 추가
+            const systemMessage: ChatMessage = {
+              id: `system_${Date.now()}`,
+              userId: "system",
+              userName: "시스템",
+              message: "퀴즈가 종료되었습니다!",
+              timestamp: Date.now(),
+              type: "system",
+            };
+            setChatMessages((prev) => [...prev, systemMessage]);
         }
 
         setRoom(roomData);
@@ -340,8 +341,13 @@ export default function RoomPage() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const nameFromUrl = urlParams.get("name");
+    const isHostParam = urlParams.get("isHost");
+    
     if (nameFromUrl) {
       setUserName(nameFromUrl);
+      if (isHostParam === "true") {
+        setIsHost(true);
+      }
       setShouldAutoJoin(true);
     }
 
@@ -369,7 +375,7 @@ export default function RoomPage() {
     if (shouldAutoJoin && room && !hasJoined && !isJoining && userName) {
       // 자동으로 방에 입장
       setShouldAutoJoin(false); // 한 번만 실행되도록
-      joinRoom();
+      joinRoom(0);
     }
   }, [shouldAutoJoin, room, userName, hasJoined, isJoining]);
 
@@ -409,73 +415,68 @@ export default function RoomPage() {
     scrollToBottom();
   }, [chatMessages]);
 
-  const joinRoom = async () => {
-    // 중복 호출 방지
-    if (!userName.trim() || !room || hasJoined || isJoining) return;
+  const joinRoom = async (retryCount = 0) => {
+    if (!userName.trim() || !room || hasJoined) return;
 
-    setIsJoining(true);
-    const userId = `user_${Date.now()}`;
+    if (retryCount === 0) {
+      setIsJoining(true);
+    }
 
     try {
       const response = await fetch(`http://localhost:8080/api/game/join-room`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          roomId,
-          userId,
-          userName: userName.trim(),
-        }),
-        signal: AbortSignal.timeout(10000), // 10초 타임아웃
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId, userId, userName: userName.trim() }),
+        signal: AbortSignal.timeout(30000),
       });
 
-      if (response.ok) {
-        const joinData = await response.json();
-        setCurrentUser(userId);
-        setHasJoined(true);
-        setHasJoinedWebSocket(false);
-        setIsHost(joinData.isHost || false);
-        setGameStarted(joinData.roomStatus === "ACTIVE");
-
-        // 게임이 시작되지 않은 경우에만 결과창 초기화
-        if (joinData.roomStatus !== "ACTIVE") {
-          setShowResults(false);
-        }
-
-        setHasSubmitted(false);
-        setSelectedAnswer("");
-        setTextAnswer("");
-
-        // 개인 문제 진행 상태 초기화
-        setUserCurrentQuestion(0);
-        setUserAnswers({});
-        setUserScore(0);
-        setIsLastQuestion(false);
-        setQuizFinished(false);
-
-        // WebSocket이 연결되어 있지 않을 때만 연결
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-          connectWebSocket();
-        }
-
-        // 게임이 이미 시작된 경우에만 타이머 시작
-        if (joinData.roomStatus === "ACTIVE" && !timerRef) {
-          startTimer(room.timeLimit || 30);
-        }
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
       }
-    } catch (error) {
-      console.error("Failed to join room:", error);
-      // 연결 오류 시 사용자에게 알림
-      if (error instanceof Error && error.name === "AbortError") {
-        alert(
-          "서버 연결 시간이 초과되었습니다. 백엔드 서버가 실행 중인지 확인해주세요."
-        );
-      } else {
-        alert("방 참여에 실패했습니다. 서버 연결을 확인해주세요.");
+
+      const joinData = await response.json();
+      setCurrentUser(userId);
+      setHasJoined(true);
+      setHasJoinedWebSocket(false);
+      setIsHost(joinData.isHost || false);
+      setGameStarted(joinData.roomStatus === "ACTIVE");
+
+      if (joinData.roomStatus !== "ACTIVE") {
+        setShowResults(false);
       }
-    } finally {
+
+      setHasSubmitted(false);
+      setSelectedAnswer("");
+      setTextAnswer("");
+      setUserCurrentQuestion(0);
+      setUserAnswers({});
+      setUserScore(0);
+      setIsLastQuestion(false);
+      setQuizFinished(false);
+      
+      setJoinRetryCount(0);
       setIsJoining(false);
+      console.log("방 참가 성공!");
+
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        connectWebSocket();
+      }
+
+      if (joinData.roomStatus === "ACTIVE" && !timerRef) {
+        startTimer(room.timeLimit || 30);
+      }
+
+    } catch (error) {
+      console.error(`방 참가 실패 (시도 ${retryCount + 1}):`, error);
+      if (retryCount < maxJoinRetries) {
+        const nextRetryCount = retryCount + 1;
+        setJoinRetryCount(nextRetryCount);
+        setTimeout(() => joinRoom(nextRetryCount), 2000);
+      } else {
+        alert("방 참여에 실패했습니다. 서버에 연결할 수 없습니다.");
+        setIsJoining(false);
+        setJoinRetryCount(0);
+      }
     }
   };
 
@@ -613,51 +614,40 @@ export default function RoomPage() {
     if (!room || !isHost) return;
 
     try {
-      const response = await fetch(
-        `http://localhost:8080/api/game/start-game`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            roomId: room.id,
-            userId: currentUser,
-          }),
-        }
-      );
+      const response = await fetch(`http://localhost:8080/api/game/start-game`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roomId: room.id,
+          userId: currentUser,
+        }),
+        signal: AbortSignal.timeout(30000), // 10초 -> 30초로 연장
+      });
 
       if (response.ok) {
-        const data = await response.json();
-        if (data.status === "started") {
-          setGameStarted(true);
-          setRoom((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  status: "active",
-                  currentQuestion: 0,
-                }
-              : null
-          );
+        const gameData = await response.json();
+        console.log("게임 시작 성공:", gameData);
+        setGameStarted(true);
+        setUserCurrentQuestion(gameData.currentQuestion);
+        startTimer(gameData.timeLimit);
 
-          // 타이머 시작
-          startTimer(data.timeLimit || 30);
-
-          // 시스템 메시지 추가
-          const systemMessage: ChatMessage = {
-            id: `system_${Date.now()}`,
-            userId: "system",
-            userName: "시스템",
-            message: "게임이 시작되었습니다! 첫 번째 문제를 풀어보세요.",
-            timestamp: Date.now(),
-            type: "system",
-          };
-          setChatMessages((prev) => [...prev, systemMessage]);
-        }
+        const systemMessage: ChatMessage = {
+          id: `system_${Date.now()}`,
+          userId: "system",
+          userName: "시스템",
+          message: "게임이 시작되었습니다!",
+          timestamp: Date.now(),
+          type: "system",
+        };
+        setChatMessages((prev) => [...prev, systemMessage]);
+      } else {
+        throw new Error("Failed to start game");
       }
     } catch (error) {
       console.error("Failed to start game:", error);
+      alert("게임을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.");
     }
   };
 
@@ -989,15 +979,19 @@ export default function RoomPage() {
                 placeholder="이름을 입력하세요"
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && joinRoom()}
+                onKeyPress={(e) => e.key === "Enter" && joinRoom(0)}
               />
             </div>
             <Button
-              onClick={joinRoom}
+              onClick={() => joinRoom(0)}
               className="w-full"
               disabled={!userName.trim() || isJoining}
             >
-              {isJoining ? "입장 중..." : "룸 참여하기"}
+              {isJoining ? (
+                joinRetryCount > 0 ?
+                  `재시도 중... (${joinRetryCount}/${maxJoinRetries})`
+                  : "입장 중..."
+              ) : "룸 참여하기"}
             </Button>
             <div className="text-center">
               <Button variant="outline" size="sm" onClick={copyRoomLink}>
@@ -1358,10 +1352,7 @@ export default function RoomPage() {
                               room.timeLimit
                             )}`}
                             style={{
-                              width: `${getProgressValue(
-                                timeLeft,
-                                room.timeLimit
-                              )}%`,
+                              width: `${getProgressValue(timeLeft, room.timeLimit)}%`,
                             }}
                           />
                         </div>
@@ -1652,7 +1643,7 @@ export default function RoomPage() {
                             : "bg-gray-50"
                         }`}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
                           <span
                             className={`font-bold ${
                               index === 0 ? "text-yellow-600" : "text-gray-500"
