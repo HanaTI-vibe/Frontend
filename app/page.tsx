@@ -1,22 +1,35 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Plus, Users, BookOpen, Zap, MessageCircle, ArrowRight } from "lucide-react"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Plus,
+  Users,
+  BookOpen,
+  Zap,
+  MessageCircle,
+  ArrowRight,
+} from "lucide-react";
 
 export default function HomePage() {
-  const [inviteCode, setInviteCode] = useState("")
-  const router = useRouter()
+  const [inviteCode, setInviteCode] = useState("");
+  const router = useRouter();
 
   const handleJoinRoom = () => {
     if (inviteCode.trim()) {
-      router.push(`/join?code=${inviteCode.trim().toUpperCase()}`)
+      router.push(`/join?code=${inviteCode.trim().toUpperCase()}`);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -29,8 +42,10 @@ export default function HomePage() {
                 <BookOpen className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">AI 협업 학습</h1>
-                <p className="text-sm text-gray-600">함께 공부하는 스마트 플랫폼</p>
+                <h1 className="text-xl font-bold text-gray-900">L2Q</h1>
+                <p className="text-sm text-gray-600">
+                  함께 공부하는 스마트 플랫폼
+                </p>
               </div>
             </div>
           </div>
@@ -46,7 +61,8 @@ export default function HomePage() {
             <span className="text-blue-600">친구들과 함께 공부하세요</span>
           </h2>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            강의자료 PDF를 업로드하면 AI가 자동으로 문제를 생성하고, 실시간으로 친구들과 함께 풀 수 있습니다
+            강의자료 PDF를 업로드하면 AI가 자동으로 문제를 생성하고, 실시간으로
+            친구들과 함께 풀 수 있습니다
           </p>
         </div>
 
@@ -58,7 +74,9 @@ export default function HomePage() {
                 <Zap className="w-6 h-6" />
               </div>
               <CardTitle>AI 문제 생성</CardTitle>
-              <CardDescription>PDF 업로드만으로 객관식, 단답식, 주관식 문제 자동 생성</CardDescription>
+              <CardDescription>
+                PDF 업로드만으로 객관식, 단답식, 주관식 문제 자동 생성
+              </CardDescription>
             </CardHeader>
           </Card>
 
@@ -68,7 +86,9 @@ export default function HomePage() {
                 <Users className="w-6 h-6" />
               </div>
               <CardTitle>실시간 협업</CardTitle>
-              <CardDescription>친구들과 동시에 문제를 풀고 실시간으로 점수 경쟁</CardDescription>
+              <CardDescription>
+                친구들과 동시에 문제를 풀고 실시간으로 점수 경쟁
+              </CardDescription>
             </CardHeader>
           </Card>
 
@@ -78,7 +98,9 @@ export default function HomePage() {
                 <MessageCircle className="w-6 h-6" />
               </div>
               <CardTitle>실시간 채팅</CardTitle>
-              <CardDescription>문제를 풀면서 친구들과 힌트 공유 및 토론</CardDescription>
+              <CardDescription>
+                문제를 풀면서 친구들과 힌트 공유 및 토론
+              </CardDescription>
             </CardHeader>
           </Card>
         </div>
@@ -96,7 +118,8 @@ export default function HomePage() {
                 방 생성하기
               </CardTitle>
               <CardDescription>
-                강의자료 PDF를 업로드하고 AI가 생성한 문제로 새로운 학습방을 만들어보세요
+                강의자료 PDF를 업로드하고 AI가 생성한 문제로 새로운 학습방을
+                만들어보세요
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -114,7 +137,11 @@ export default function HomePage() {
                   초대코드로 친구들 초대
                 </div>
               </div>
-              <Button onClick={() => router.push("/create")} className="w-full" size="lg">
+              <Button
+                onClick={() => router.push("/create")}
+                className="w-full"
+                size="lg"
+              >
                 방 생성하기
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
@@ -131,7 +158,9 @@ export default function HomePage() {
                 </div>
                 방 입장하기
               </CardTitle>
-              <CardDescription>친구가 공유한 초대코드를 입력하고 함께 문제를 풀어보세요</CardDescription>
+              <CardDescription>
+                친구가 공유한 초대코드를 입력하고 함께 문제를 풀어보세요
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
@@ -143,13 +172,17 @@ export default function HomePage() {
                     id="invite-code"
                     placeholder="예: ABC123"
                     value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                    onChange={(e) =>
+                      setInviteCode(e.target.value.toUpperCase())
+                    }
                     onKeyPress={(e) => e.key === "Enter" && handleJoinRoom()}
                     className="mt-1"
                     maxLength={6}
                   />
                 </div>
-                <p className="text-xs text-gray-500">초대코드는 6자리 영문+숫자 조합입니다</p>
+                <p className="text-xs text-gray-500">
+                  초대코드는 6자리 영문+숫자 조합입니다
+                </p>
               </div>
               <Button
                 onClick={handleJoinRoom}
@@ -183,5 +216,5 @@ export default function HomePage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
