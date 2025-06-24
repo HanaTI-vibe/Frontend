@@ -1,39 +1,51 @@
-"use client"
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { useState } from "react"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useState } from "react";
 
 interface Question {
-  id: string
-  type: "multiple-choice" | "short-answer" | "essay"
-  question: string
-  options?: string[]
-  correctAnswer?: string
-  explanation?: string
-  points: number
+  id: string;
+  type: "multiple-choice" | "short-answer" | "essay";
+  question: string;
+  options?: string[];
+  correctAnswer?: string;
+  explanation?: string;
+  points: number;
 }
 
 interface QuestionCardProps {
-  question: Question
-  questionNumber: number
-  onSubmit: (answer: string) => void
-  disabled?: boolean
+  question: Question;
+  questionNumber: number;
+  onSubmit: (answer: string) => void;
+  disabled?: boolean;
 }
 
-export function QuestionCard({ question, questionNumber, onSubmit, disabled }: QuestionCardProps) {
-  const [selectedAnswer, setSelectedAnswer] = useState("")
-  const [textAnswer, setTextAnswer] = useState("")
+export function QuestionCard({
+  question,
+  questionNumber,
+  onSubmit,
+  disabled,
+}: QuestionCardProps) {
+  const [selectedAnswer, setSelectedAnswer] = useState("");
+  const [textAnswer, setTextAnswer] = useState("");
 
   const handleSubmit = () => {
-    const answer = question.type === "multiple-choice" ? selectedAnswer : textAnswer
-    onSubmit(answer)
-    setSelectedAnswer("")
-    setTextAnswer("")
-  }
+    const answer =
+      question.type === "multiple-choice" ? selectedAnswer : textAnswer;
+    onSubmit(answer);
+    setSelectedAnswer("");
+    setTextAnswer("");
+  };
 
   return (
     <Card>
@@ -44,7 +56,11 @@ export function QuestionCard({ question, questionNumber, onSubmit, disabled }: Q
         </CardTitle>
         <CardDescription>
           유형:{" "}
-          {question.type === "multiple-choice" ? "객관식" : question.type === "short-answer" ? "단답식" : "주관식"}
+          {question.type === "multiple-choice"
+            ? "객관식"
+            : question.type === "short-answer"
+            ? "단답식"
+            : "주관식"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -56,11 +72,15 @@ export function QuestionCard({ question, questionNumber, onSubmit, disabled }: Q
               <div
                 key={index}
                 className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                  selectedAnswer === option ? "bg-blue-100 border-blue-500" : "hover:bg-gray-50"
+                  selectedAnswer === option
+                    ? "bg-blue-100 border-blue-500"
+                    : "hover:bg-gray-50"
                 }`}
                 onClick={() => !disabled && setSelectedAnswer(option)}
               >
-                <span className="font-medium mr-2">{String.fromCharCode(65 + index)}.</span>
+                <span className="font-medium mr-2">
+                  {String.fromCharCode(65 + index)}.
+                </span>
                 {option}
               </div>
             ))}
@@ -89,6 +109,7 @@ export function QuestionCard({ question, questionNumber, onSubmit, disabled }: Q
         <Button
           onClick={handleSubmit}
           className="w-full"
+          variant="green"
           disabled={
             disabled ||
             (question.type === "multiple-choice" && !selectedAnswer) ||
@@ -99,5 +120,5 @@ export function QuestionCard({ question, questionNumber, onSubmit, disabled }: Q
         </Button>
       </CardContent>
     </Card>
-  )
+  );
 }

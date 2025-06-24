@@ -49,7 +49,7 @@ export default function CreateRoomPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const router = useRouter();
-  const [timeLimit, setTimeLimit] = useState("30");
+  const [timeLimit, setTimeLimit] = useState("120");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,7 +121,7 @@ export default function CreateRoomPage() {
     try {
       // Spring Boot 백엔드 서버로 요청
       const response = await fetch(
-        "http://localhost:8080/api/generate-questions",
+        process.env.NEXT_PUBLIC_API_BASE_URL + "/api/generate-questions",
         {
           method: "POST",
           body: formData,
@@ -321,7 +321,7 @@ export default function CreateRoomPage() {
                 <Label htmlFor="question-count">문제 개수</Label>
                 <Select value={questionCount} onValueChange={setQuestionCount}>
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="문제 수" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="5">5개</SelectItem>
@@ -350,14 +350,15 @@ export default function CreateRoomPage() {
                 <Label htmlFor="time-limit">문제당 제한시간</Label>
                 <Select value={timeLimit} onValueChange={setTimeLimit}>
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="문제당 시간 제한" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="15">15초</SelectItem>
                     <SelectItem value="30">30초</SelectItem>
-                    <SelectItem value="45">45초</SelectItem>
-                    <SelectItem value="60">60초</SelectItem>
-                    <SelectItem value="90">90초</SelectItem>
+                    <SelectItem value="60">1분</SelectItem>
+                    <SelectItem value="120">2분</SelectItem>
+                    <SelectItem value="180">3분</SelectItem>
+                    <SelectItem value="300">5분</SelectItem>
+                    <SelectItem value="600">10분</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

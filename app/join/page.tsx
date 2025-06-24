@@ -1,57 +1,72 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ArrowLeft, Users, AlertCircle } from "lucide-react"
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, Users, AlertCircle } from "lucide-react";
 
 export default function JoinRoomPage() {
-  const [inviteCode, setInviteCode] = useState("")
-  const [userName, setUserName] = useState("")
-  const [isJoining, setIsJoining] = useState(false)
-  const [error, setError] = useState("")
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  const [inviteCode, setInviteCode] = useState("");
+  const [userName, setUserName] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
-    const code = searchParams.get("code")
+    const code = searchParams.get("code");
     if (code) {
-      setInviteCode(code.toUpperCase())
+      setInviteCode(code.toUpperCase());
     }
-  }, [searchParams])
+  }, [searchParams]);
 
   const handleJoinRoom = async () => {
-    if (!inviteCode.trim() || !userName.trim()) return
+    if (!inviteCode.trim() || !userName.trim()) return;
 
-    setIsJoining(true)
-    setError("")
+    setIsJoining(true);
+    setError("");
 
     try {
       // Spring Boot 백엔드 API 호출
-      const response = await fetch(`http://localhost:8080/api/rooms/by-code?code=${inviteCode.trim()}`)
+      const response = await fetch(
+        process.env.NEXT_PUBLIC_API_BASE_URL +
+          `/api/rooms/by-code?code=${inviteCode.trim()}`
+      );
 
       if (response.ok) {
-        const { roomId } = await response.json()
-        router.push(`/room/${roomId}?name=${encodeURIComponent(userName.trim())}`)
+        const { roomId } = await response.json();
+        router.push(
+          `/room/${roomId}?name=${encodeURIComponent(userName.trim())}`
+        );
       } else {
-        setError("유효하지 않은 초대코드입니다.")
+        setError("유효하지 않은 초대코드입니다.");
       }
     } catch (error) {
-      setError("방 입장 중 오류가 발생했습니다.")
+      setError("방 입장 중 오류가 발생했습니다.");
     } finally {
-      setIsJoining(false)
+      setIsJoining(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-md mx-auto">
         {/* 헤더 */}
         <div className="mb-8">
-          <Button variant="ghost" onClick={() => router.push("/")} className="mb-4">
+          <Button
+            variant="ghost"
+            onClick={() => router.push("/")}
+            className="mb-4"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             메인으로 돌아가기
           </Button>
@@ -63,7 +78,9 @@ export default function JoinRoomPage() {
               <Users className="w-8 h-8" />
             </div>
             <CardTitle>학습방 입장</CardTitle>
-            <CardDescription>초대코드와 이름을 입력하고 친구들과 함께 공부하세요</CardDescription>
+            <CardDescription>
+              초대코드와 이름을 입력하고 친구들과 함께 공부하세요
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -112,5 +129,5 @@ export default function JoinRoomPage() {
         </Card>
       </div>
     </div>
-  )
+  );
 }
